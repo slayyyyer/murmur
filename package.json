@@ -1,0 +1,15 @@
+{
+  "name": "murmur",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A small animated face that reacts to world news, Charlotte weather, and environmental observations.",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node proxy/server.js",
+    "dev": "node proxy/server.js",
+    "test": "node tests/run.js"
+  }
+}

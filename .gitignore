@@ -1,0 +1,5 @@
+.murmur-server.pid
+.server.log
+.DS_Store
+Thumbs.db
+node_modules/

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Murmur — a small face for a big world</title>
+    <meta
+      name="description"
+      content="Murmur is a small animated face in Charlotte, North Carolina that reacts to weather, air quality, world news, earthquakes, wildlife observations, and natural events. It is a simulated emotional state, not a real one."
+    />
+    <meta name="color-scheme" content="light" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%237c5cbf'/%3E%3Ccircle cx='23' cy='27' r='4' fill='%23fffaf3'/%3E%3Ccircle cx='41' cy='27' r='4' fill='%23fffaf3'/%3E%3Cpath d='M21 40q11 10 22 0' fill='none' stroke='%23fffaf3' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./src/main.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+
+    <svg class="svg-defs" aria-hidden="true" focusable="false" width="0" height="0">
+      <defs>
+        <linearGradient id="murmur-head-gradient" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#fffdf7"></stop>
+          <stop offset="0.55" stop-color="#f8f1ff"></stop>
+          <stop offset="1" stop-color="#ead9ff"></stop>
+        </linearGradient>
+      </defs>
+    </svg>
+
+    <div class="page">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Murmur home">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <span class="brand-name">Murmur</span>
+          <span class="brand-tag">a small face for a big world</span>
+        </a>
+        <div class="header-tools">
+          <span class="model-pill" id="model-pill">News model: off</span>
+          <button class="ghost-button" id="motion-toggle" type="button" aria-pressed="false">
+            Reduce motion
+          </button>
+          <button class="ghost-button" id="settings-open" type="button" aria-haspopup="dialog">
+            Model settings
+          </button>
+        </div>
+      </header>
+
+      <main id="main">
+        <section class="stage card" aria-labelledby="mood-heading">
+          <div class="stage-face">
+            <div class="face-slot" id="face-slot"></div>
+            <p class="face-caption">
+              <span class="pin" aria-hidden="true"></span>
+              Charlotte, North Carolina
+            </p>
+          </div>
+
+          <div class="stage-copy">
+            <p class="eyebrow">Simulated emotional state · public sources · computed on this device</p>
+            <h1 class="mood-name" id="mood-heading">Waking up…</h1>
+            <p class="mood-description" id="mood-description" aria-live="polite">
+              Murmur is gathering its first impressions of the world.
+            </p>
+            <p class="mood-time" id="mood-time">No refresh yet.</p>
+
+            <ul class="bubbles" id="bubbles" aria-label="Strongest current influences"></ul>
+
+            <div class="stage-actions">
+              <button class="primary-button" id="refresh-button" type="button">Refresh world</button>
+              <span class="next-refresh" id="next-refresh">Auto-refresh every 10 minutes</span>
+            </div>
+            <p class="refresh-status" id="refresh-status" role="status" aria-live="polite">
+              Murmur has not checked its sources yet this session.
+            </p>
+          </div>
+        </section>
+
+        <section class="conditions" aria-label="Charlotte conditions">
+          <article class="card condition" id="weather-card" aria-labelledby="weather-heading">
+            <div class="condition-head">
+              <h2 id="weather-heading">Charlotte weather</h2>
+              <span class="source-state" id="weather-status">Waiting</span>
+            </div>
+            <div class="condition-main">
+              <span class="condition-glyph" id="weather-glyph" aria-hidden="true">◌</span>
+              <p class="condition-value" id="weather-value">—</p>
+              <p class="condition-label" id="weather-label">No observation yet</p>
+            </div>
+            <dl class="condition-facts" id="weather-facts"></dl>
+            <p class="condition-meta" id="weather-meta">Refresh to load Open-Meteo.</p>
+          </article>
+
+          <article class="card condition" id="air-card" aria-labelledby="air-heading">
+            <div class="condition-head">
+              <h2 id="air-heading">Charlotte air quality</h2>
+              <span class="source-state" id="air-status">Waiting</span>
+            </div>
+            <div class="condition-main">
+              <span class="condition-glyph" id="air-glyph" aria-hidden="true">◌</span>
+              <p class="condition-value" id="air-value">—</p>
+              <p class="condition-label" id="air-label">No modeled air quality yet</p>
+            </div>
+            <dl class="condition-facts" id="air-facts"></dl>
+            <p class="condition-meta" id="air-meta">Refresh to load Open-Meteo air quality.</p>
+          </article>
+        </section>
+
+        <section class="card sources-bar" aria-labelledby="availability-heading">
+          <div class="section-heading">
+            <div>
+              <h2 id="availability-heading">Source availability</h2>
+              <p>Every source is fetched independently. Failures keep their dated cache.</p>
+            </div>
+            <span class="tiny-note" id="availability-note"></span>
+          </div>
+          <ul class="source-chips" id="source-chips"></ul>
+        </section>
+
+        <section class="card preview" aria-labelledby="preview-heading">
+          <div class="section-heading">
+            <div>
+              <h2 id="preview-heading">Expression preview</h2>
+              <p>Fictional scenarios, fixed by hand to show each face.</p>
+            </div>
+            <span class="badge badge-preview">Preview only</span>
+          </div>
+          <div class="preview-body">
+            <div class="preview-face" id="preview-face"></div>
+            <div class="preview-copy">
+              <div class="scenario-chips" id="scenario-chips" role="group" aria-label="Fictional expression scenarios"></div>
+              <h3 id="preview-title">Kindness in the news</h3>
+              <p id="preview-description"></p>
+              <p class="fine-print">
+                These scenarios are written examples, not live data. Selecting one only previews a face; it never
+                changes Murmur's mood and never creates a reaction.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <details class="card panel" id="explore-panel">
+          <summary>
+            <span class="summary-text">
+              <span class="panel-title">Explore the world</span>
+              <span class="panel-sub">Recorded news, measurements and observations, with dates and status</span>
+            </span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="panel-body">
+            <div class="explore-controls">
+              <div class="filter-chips" id="explore-filters" role="group" aria-label="Filter recorded inputs by category"></div>
+              <label class="switch">
+                <input type="checkbox" id="active-only" />
+                <span>Only active reactions</span>
+              </label>
+            </div>
+            <p class="list-summary" id="explore-summary" role="status" aria-live="polite"></p>
+            <ul class="record-list" id="record-list"></ul>
+            <div class="list-footer">
+              <button class="ghost-button" id="show-more" type="button" hidden>Show more</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="card panel" id="breakdown-panel">
+          <summary>
+            <span class="summary-text">
+              <span class="panel-title">Sources and mood</span>
+              <span class="panel-sub">How each emotion was assembled, and where the limits sit</span>
+            </span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="panel-body" id="breakdown-body">
+            <p class="muted">Open this section after the first refresh to see the full breakdown.</p>
+          </div>
+        </details>
+
+        <footer class="site-footer">
+          <p>
+            Murmur is a fiction with a clock. It does not feel anything, verify headlines, or understand the places it
+            reads about. Its mood is calculated in your browser from the sources below and fades on a fixed schedule.
+          </p>
+          <p class="fine-print">
+            Charlotte weather and modeled air quality: Open-Meteo · News: BBC, Al Jazeera, NASA, The Guardian, Positive
+            News, WFAE · Earthquakes: USGS · Wildlife: iNaturalist · Natural events: NASA EONET.
+          </p>
+        </footer>
+      </main>
+    </div>
+
+    <dialog class="dialog" id="settings-dialog" aria-labelledby="settings-title">
+      <form id="settings-form" method="dialog" novalidate>
+        <div class="dialog-head">
+          <h2 id="settings-title">News interpretation</h2>
+          <button class="icon-button" type="button" id="settings-close" aria-label="Close settings">×</button>
+        </div>
+        <p class="dialog-intro">
+          Murmur can ask a local model, such as Ollama, to read headlines and propose a short mood for each one.
+          Headlines are sent only to the endpoint you choose and are treated as untrusted data. Model output is
+          validated before it can become a reaction.
+        </p>
+        <label class="field">
+          <span>Ollama endpoint</span>
+          <input
+            type="url"
+            id="llm-endpoint"
+            name="endpoint"
+            placeholder="http://localhost:11434"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <input
+            type="text"
+            id="llm-model"
+            name="model"
+            placeholder="llama3.1"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="llm-enabled" />
+          <span>Interpret world news with this model</span>
+        </label>
+        <p class="fine-print">
+          Ollama must allow this page as an origin, for example
+          <code>OLLAMA_ORIGINS=http://localhost:8080</code> before <code>ollama serve</code>. No API key is stored in
+          this app.
+        </p>
+        <p class="field-status" id="llm-test-result" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="llm-test">Test connection</button>
+          <button class="primary-button" type="submit" id="settings-save">Save settings</button>
+        </div>
+        <p class="fine-print">
+          If the model is off or unreachable, measured sources keep working and news is clearly marked as not
+          interpreted.
+        </p>
+      </form>
+    </dialog>
+
+    <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+  </body>
+</html>
