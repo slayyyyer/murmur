@@ -249,15 +249,6 @@ export const FETCH = Object.freeze({
 
 export const NEWS_INGEST_MAX_AGE_HOURS = 72;
 export const NEWS_ITEMS_PER_FEED = 24;
-export const NEWS_BATCH_SIZE = 8;
-export const NEWS_BATCHES_PER_REFRESH = 2;
-
-export const LLM_DEFAULTS = Object.freeze({
-  enabled: false,
-  endpoint: 'http://localhost:11434',
-  model: 'llama3.1',
-  timeoutMs: 45_000,
-});
 
 export const AUTO_REFRESH_MS = 10 * 60 * 1000;
 export const TICK_MS = 30 * 1000;
@@ -265,7 +256,7 @@ export const RECORD_PAGE_SIZE = 40;
 
 /** The static snapshot built by the hourly GitHub Actions workflow. */
 export const WORLD_CACHE_URL = new URL('../data/world-cache.json', import.meta.url).href;
-export const WORLD_CACHE_SCHEMA_VERSION = 1;
+export const WORLD_CACHE_SCHEMA_VERSION = 2;
 export const WORLD_CACHE_MAX_AGE_HOURS = 2;
 export const WORLD_CACHE_BUCKET_MS = AUTO_REFRESH_MS;
 

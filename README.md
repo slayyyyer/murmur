@@ -14,7 +14,7 @@ GitHub Actions builds the world once an hour:
 
 1. The workflow starts the same allowlisted relay used in local development.
 2. Every adapter fetches its source through that relay or directly from the runner.
-3. `scripts/build-world-cache.js` dedupes the records and writes `data/world-cache.json`.
+3. `scripts/build-world-cache.js` dedupes the records, carries forward valid earlier news reactions, asks the build-time model to interpret new headlines, and writes `data/world-cache.json`.
 4. The app and cache are uploaded as one GitHub Pages artifact.
 5. The browser fetches only that same-origin cache. It never contacts a feed, the relay, or a third-party API.
 
@@ -48,6 +48,18 @@ PowerShell:
 $env:MURMUR_PROXY="http://127.0.0.1:8080"; npm run cache
 ```
 
+The cache builds without a model key. Measured sources still publish, and the interface says news mood was not generated. To generate news reactions locally, provide a Z.ai key (or another OpenAI-compatible endpoint) when building:
+
+```bash
+NEWS_MODEL_API_KEY="your-key" MURMUR_PROXY="http://127.0.0.1:8080" npm run cache
+```
+
+PowerShell:
+
+```powershell
+$env:NEWS_MODEL_API_KEY="your-key"; $env:MURMUR_PROXY="http://127.0.0.1:8080"; npm run cache
+```
+
 Then open <http://127.0.0.1:8080>. The server serves `data/world-cache.json` alongside the app. If the cache is missing, the page loads but reports that no hourly snapshot is available; saved records are still shown.
 
 Optional environment variables for the local server:
@@ -67,7 +79,7 @@ npm test
 bun tests/run.js
 ```
 
-The suite has 53 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, model-output validation, and cache validation.
+The suite has 56 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, model-output validation, and cache validation.
 
 ---
 
@@ -89,7 +101,7 @@ It runs the tests, starts the relay on the runner, builds the cache, creates a `
 
 If every source fails, the cache builder exits non-zero and the previous successful Pages deployment stays online. Partial failures still deploy, with each source's status shown in the interface. A cache older than two hours is labeled stale; GitHub cron can be delayed, and scheduled workflows can be disabled after prolonged repository inactivity.
 
-No secrets are used. All sources are public and keyless. The production site has no server process.
+The news model is optional. To enable it, add `ZAI_API_KEY` (or `NEWS_MODEL_API_KEY`) under **Settings → Secrets and variables → Actions**. Without a key, measured sources still deploy and the interface says news mood was not generated. Optional repository variables `NEWS_MODEL_BASE_URL`, `NEWS_MODEL_NAME`, and `NEWS_MODEL_PROVIDER` override the Z.ai defaults; do not put keys in variables. All measured sources are public and keyless. The production site has no server process.
 
 ### Cache format and validation
 
@@ -97,8 +109,28 @@ No secrets are used. All sources are public and keyless. The production site has
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedAt": 1761945102029,
+  "newsModel": {
+    "provider": "Z.ai",
+    "model": "glm-4.5-flash",
+    "configured": true,
+    "available": true,
+    "error": null,
+    "reactionCount": 1,
+    "interpretedThisRun": 1,
+    "rejectedThisRun": 0,
+    "generatedAt": 1761945102029
+  },
+  "newsReactions": [
+    {
+      "sourceId": "news:abc123",
+      "mood": "happy",
+      "intensity": 0.4,
+      "text": "Hopeful about people choosing to cooperate.",
+      "interpretedAt": 1761945102029
+    }
+  ],
   "sources": [
     {
       "sourceId": "weather",
@@ -115,7 +147,7 @@ No secrets are used. All sources are public and keyless. The production site has
 }
 ```
 
-Before anything reaches IndexedDB, `src/app/worldCache.js` checks the schema version, generation time, source IDs, statuses, record groups, HTTPS links, timestamps, and small per-record data size. Invalid records are dropped. An invalid envelope is rejected so it cannot overwrite a good saved mood. Re-ingesting the same snapshot never creates a second reaction, resets an age, or increases an intensity.
+Before anything reaches IndexedDB, `src/app/worldCache.js` checks the schema version, generation time, source IDs, statuses, record groups, HTTPS links, timestamps, and small per-record data size. It also validates the build-time model status and every cached news reaction, including the mandatory original `interpretedAt`. Invalid records and reactions are dropped. An invalid envelope is rejected so it cannot overwrite a good saved mood. Schema 1 caches remain readable with no news reactions. Re-ingesting the same snapshot never creates a second reaction, resets an age, or increases an intensity.
 
 ---
 
@@ -176,35 +208,32 @@ The relay runs inside the Actions runner and during local cache generation. The 
 
 ---
 
-## Optional local model (Ollama)
+## Build-time news model (optional)
 
-News needs a model to become an emotional influence. Without one, headlines are still collected, dated, linked, and browsable, but they do **not** affect the mood. Weather, air, earthquakes, wildlife, and EONET continue working because their rules are deterministic.
+News needs a model to become an emotional influence. Murmur runs that model in GitHub Actions while building the hourly cache, never in the browser. Without a key, or when the model fails, headlines are still collected, dated, linked, and browsable, but they do **not** affect the mood. Weather, air, earthquakes, wildlife, and EONET continue working because their rules are deterministic.
 
-1. Install Ollama from <https://ollama.com/>.
-2. Allow the local and Pages origins, then start the server:
+### Setup
 
-   macOS / Linux:
+1. Create an API key at <https://z.ai/>. The default model is `glm-4.5-flash` at `https://api.z.ai/api/paas/v4`.
+2. In the GitHub repository, open **Settings → Secrets and variables → Actions** and add `ZAI_API_KEY` (or `NEWS_MODEL_API_KEY`) as a secret.
+3. Run **World cache and Pages** from the Actions tab, or wait for the hourly schedule. The next cache will include validated news reactions.
 
-   ```bash
-   OLLAMA_ORIGINS=http://localhost:8080,https://slayyyyer.github.io ollama serve
-   ```
+Optional repository variables override the defaults:
 
-   Windows PowerShell:
+- `NEWS_MODEL_BASE_URL` — OpenAI-compatible base URL, without `/chat/completions`.
+- `NEWS_MODEL_NAME` — model name.
+- `NEWS_MODEL_PROVIDER` — display name shown in the interface.
+- `NEWS_MODEL_BATCH_SIZE`, `NEWS_MODEL_MAX_HEADLINES`, `NEWS_MODEL_TIMEOUT_MS` — optional build limits.
 
-   ```powershell
-   $env:OLLAMA_ORIGINS="http://localhost:8080,https://slayyyyer.github.io"; ollama serve
-   ```
+The key is read only by `scripts/build-world-cache.js` in the runner. It is never placed in the cache, the browser, client code, or logs. The browser ingests only validated mood, intensity, and text.
 
-3. Pull a small instruction model:
+### Behavior
 
-   ```bash
-   ollama pull llama3.1
-   ```
-
-4. In Murmur, open **Model settings**, set the endpoint (`http://localhost:11434`) and model, choose **Interpret world news with this model**, and press **Test connection**.
-5. Save, then **Reload world cache**. Newly eligible headlines are interpreted in batches of eight, up to sixteen per check.
-
-No API key is used or stored. The browser calls the endpoint directly. Some browsers block HTTPS→localhost requests as mixed content; the local server at `http://localhost:8080` is the most reliable way to use the model. The hourly cache and all measured sources work without it.
+- The builder reads the previous cache from `PREVIOUS_CACHE_URL` or a local `data/world-cache.json`.
+- It keeps earlier valid reactions for headlines still present, preserving their original `interpretedAt`.
+- It interprets at most 24 new headlines per run in batches of eight, limited to eligible news from the last 48 hours.
+- If the model is missing or fails, measured sources still deploy. Earlier reactions remain; the cache records the model error, and the interface says news mood is unavailable.
+- The browser saves each reaction once and ages it from `interpretedAt`, never from when the page loaded.
 
 ### What the model is asked for
 
@@ -223,7 +252,7 @@ The model receives **only the headline, publisher, and story ID** — never arti
 }
 ```
 
-Output is rejected if it contains an unknown story ID, a duplicate ID, a mood outside `happy/sad/mad/confused`, an intensity outside 0–1, an empty or overlong text, a URL, a digit, a quotation mark, or words asserting casualties or harm (`killed`, `injured`, `destroyed`, `safe`, `confirmed`, and similar). A rejected item simply does not become a reaction.
+Output is rejected if it contains an unknown story ID, a duplicate ID, a mood outside `happy/sad/mad/confused`, an intensity outside 0–1, an empty or overlong text, a URL, a digit, a quotation mark, or words asserting casualties or harm (`killed`, `injured`, `destroyed`, `safe`, `confirmed`, and similar). A rejected item simply does not become a reaction. Cached reactions are revalidated on every build and again in the browser; a reaction without a valid `interpretedAt` is discarded.
 
 ---
 
@@ -297,7 +326,7 @@ For repeated nature event IDs (iNaturalist observation IDs, EONET event IDs), th
 - **Wildlife** — a small positive note for the newest research-grade observation within roughly 50 km.
 - **Earthquakes** — modest concern for magnitudes 4.0+, with distance from Charlotte and the explicit statement that no local impact is assumed.
 - **NASA EONET** — modest concern for open wildfires, severe storms, and volcanoes, without assuming casualties, damage, or danger to Charlotte.
-- **News** — only the optional local model. No keyword sentiment fallback and no invented reaction when the model is off.
+- **News** — only the optional build-time model. No keyword sentiment fallback and no invented reaction when the model is off or unavailable.
 
 ---
 
@@ -324,10 +353,10 @@ If the cache request fails, the page keeps every previously saved record and rea
 ## Privacy
 
 - No accounts, analytics, trackers, or third-party scripts.
-- No API keys in frontend code. The optional model needs none.
+- No API keys in frontend code. The build-time model key lives only in GitHub Actions secrets.
 - The browser downloads one same-origin JSON cache and stores observations and reactions in IndexedDB.
 - The hourly cache contains only public records. Wildlife entries store the taxon, a coarse distance rounded to 5 km (or 10/100 km farther away), the observation link, and dates. They **do not** store observer identities, photos, place guesses, or precise coordinates.
-- Headlines leave the browser only when a local model is explicitly configured, and then only to the endpoint you entered.
+- The browser never sends headlines anywhere. GitHub Actions sends only the headline, publisher, and story ID to the configured model while building the cache.
 - The relay sets `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`.
 
 ---
@@ -373,7 +402,8 @@ src/
   mood/
     engine.js              Eligibility, slots, caps, aggregation, explanations
   ai/
-    newsInterpretation.js  Ollama client, prompt, strict output validation
+    buildNewsModel.js      OpenAI-compatible build-time client, retries, limits
+    newsInterpretation.js  Prompt, strict output validation, cached-reaction checks
   app/
     runRefresh.js          Isolated ingest/reaction pipeline
     worldCache.js          Static cache fetching and validation
@@ -406,10 +436,10 @@ data/world-cache.json      Generated locally or in CI; gitignored
 - **Location, budgets, decay, feeds, publishers, and previews:** `src/config.js`.
 - **Relay allowlist:** `proxy/allowlist.js`.
 - **Cache path and staleness threshold:** `WORLD_CACHE_URL` and `WORLD_CACHE_MAX_AGE_HOURS` in `src/config.js`.
-- **Model endpoint and model name:** the in-app Model settings dialog (stored in `localStorage`).
+- **News model:** `NEWS_MODEL_*` environment variables in `.github/workflows/pages.yml`; defaults live in `src/ai/buildNewsModel.js`.
+- **Model API key:** the `ZAI_API_KEY` or `NEWS_MODEL_API_KEY` GitHub Actions secret. Never commit it.
 - **Auto cache check interval and tick interval:** `AUTO_REFRESH_MS` and `TICK_MS` in `src/config.js`.
 - **Hourly schedule:** `.github/workflows/pages.yml` (UTC cron).
-- **Batch limits:** `NEWS_BATCH_SIZE` and `NEWS_BATCHES_PER_REFRESH` in `src/config.js`.
 
 If you add a feed, add it to `FEEDS` and add its origin/path prefix to the allowlist. Rebuild the cache after changing any source endpoint.
 
@@ -418,7 +448,7 @@ If you add a feed, add it to `FEEDS` and add its origin/path prefix to the allow
 ## Honest limitations
 
 - The face is a fiction. It does not understand news, feel anything, or predict anything.
-- News reactions require the optional model. Without it, the 60% news budget is simply unused, which makes the face much quieter by design.
+- News reactions require the optional build-time model. Without a key, when the model fails, or when no reaction passes validation, the 60% news budget is simply unused, which makes the face much quieter by design.
 - Environmental reactions are hand-written rules, not analysis.
 - Open-Meteo air quality is modeled, not measured by a local sensor.
 - EONET is filtered to fires, severe storms, and volcanoes; other categories are ignored.

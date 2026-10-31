@@ -11,7 +11,7 @@ export function readableError(error) {
  * Every loader is isolated: a thrown error becomes that source's status and
  * cannot stop the others. All fetched records are deduped once, then a saved
  * reaction is created for each eligible measured observation. News reactions
- * are created only by the optional local model, never here.
+ * are created only by the optional build-time model, never here.
  */
 export async function runRefresh({ loaders = [], repository, now = Date.now() }) {
   const outcomes = await Promise.all(

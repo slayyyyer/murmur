@@ -1,27 +1,10 @@
-import { LLM_DEFAULTS } from '../config.js';
-import { fetchJson, fetchText } from '../sources/http.js';
-import { sanitizeText } from '../lib/validate.js';
+import { sanitizeText, validTimestamp } from '../lib/validate.js';
 
 const MODEL_MOODS = new Set(['happy', 'sad', 'mad', 'confused']);
 const URL_LIKE = /(https?:\/\/|www\.)/i;
 const DIGITS = /\d/;
 const CLAIM_WORDS =
   /\b(killed|dead|deaths|died|injured|wounded|casualties|destroyed|damaged|evacuated|safe|unsafe|confirmed)\b/i;
-
-export function normalizeEndpoint(endpoint) {
-  if (typeof endpoint !== 'string' || !endpoint.trim()) return null;
-  try {
-    const url = new URL(endpoint.trim());
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    if (url.username || url.password) return null;
-    url.pathname = url.pathname.replace(/\/+$/, '');
-    url.search = '';
-    url.hash = '';
-    return url.href.replace(/\/+$/, '');
-  } catch {
-    return null;
-  }
-}
 
 export function buildNewsPrompt(records) {
   const items = records.map((record) => ({
@@ -78,6 +61,36 @@ function parseLooseJson(text) {
   }
 }
 
+function validateReaction(entry, allowed, seen) {
+  if (!entry || typeof entry !== 'object') {
+    return { error: 'A reaction was not an object.' };
+  }
+  const sourceId = typeof entry.sourceId === 'string' ? entry.sourceId : '';
+  if (!allowed.has(sourceId)) {
+    return { error: `Unknown sourceId "${sanitizeText(sourceId, 80)}" was ignored.` };
+  }
+  if (seen.has(sourceId)) {
+    return { error: `Duplicate sourceId "${sourceId}" was ignored.` };
+  }
+  if (!MODEL_MOODS.has(entry.mood)) {
+    return { error: `Invalid mood for "${sourceId}".` };
+  }
+  const intensity = entry.intensity;
+  if (typeof intensity !== 'number' || !Number.isFinite(intensity) || intensity < 0 || intensity > 1) {
+    return { error: `Invalid intensity for "${sourceId}".` };
+  }
+
+  const text = sanitizeText(entry.text, 160);
+  if (!text) return { error: `Empty text for "${sourceId}".` };
+  if (text.length > 140) return { error: `Text too long for "${sourceId}".` };
+  if (URL_LIKE.test(text)) return { error: `Text included a URL for "${sourceId}".` };
+  if (DIGITS.test(text)) return { error: `Text introduced a number for "${sourceId}".` };
+  if (/[“”"]/.test(text)) return { error: `Text included a quotation mark for "${sourceId}".` };
+  if (CLAIM_WORDS.test(text)) return { error: `Text made an unsupported claim for "${sourceId}".` };
+
+  return { reaction: { sourceId, mood: entry.mood, intensity, text } };
+}
+
 /**
  * Strict validation of model output. Anything with an unknown story ID, an
  * invalid mood, out-of-range intensity, a URL, a number, or an unsupported
@@ -100,57 +113,13 @@ export function validateModelReactions(raw, allowedSourceIds) {
   const seen = new Set();
 
   for (const entry of list) {
-    if (!entry || typeof entry !== 'object') {
-      rejected.push('A reaction was not an object.');
+    const result = validateReaction(entry, allowed, seen);
+    if (result.error) {
+      rejected.push(result.error);
       continue;
     }
-    const sourceId = typeof entry.sourceId === 'string' ? entry.sourceId : '';
-    if (!allowed.has(sourceId)) {
-      rejected.push(`Unknown sourceId "${sanitizeText(sourceId, 80)}" was ignored.`);
-      continue;
-    }
-    if (seen.has(sourceId)) {
-      rejected.push(`Duplicate sourceId "${sourceId}" was ignored.`);
-      continue;
-    }
-    if (!MODEL_MOODS.has(entry.mood)) {
-      rejected.push(`Invalid mood for "${sourceId}".`);
-      continue;
-    }
-    const intensity = entry.intensity;
-    if (typeof intensity !== 'number' || !Number.isFinite(intensity) || intensity < 0 || intensity > 1) {
-      rejected.push(`Invalid intensity for "${sourceId}".`);
-      continue;
-    }
-
-    const text = sanitizeText(entry.text, 160);
-    if (!text) {
-      rejected.push(`Empty text for "${sourceId}".`);
-      continue;
-    }
-    if (text.length > 140) {
-      rejected.push(`Text too long for "${sourceId}".`);
-      continue;
-    }
-    if (URL_LIKE.test(text)) {
-      rejected.push(`Text included a URL for "${sourceId}".`);
-      continue;
-    }
-    if (DIGITS.test(text)) {
-      rejected.push(`Text introduced a number for "${sourceId}".`);
-      continue;
-    }
-    if (/[“”"]/.test(text)) {
-      rejected.push(`Text included a quotation mark for "${sourceId}".`);
-      continue;
-    }
-    if (CLAIM_WORDS.test(text)) {
-      rejected.push(`Text made an unsupported claim for "${sourceId}".`);
-      continue;
-    }
-
-    seen.add(sourceId);
-    reactions.push({ sourceId, mood: entry.mood, intensity, text });
+    seen.add(result.reaction.sourceId);
+    reactions.push(result.reaction);
   }
 
   const accepted = reactions.length > 0;
@@ -162,84 +131,32 @@ export function validateModelReactions(raw, allowedSourceIds) {
   };
 }
 
-export async function interpretNewsBatch({
-  endpoint,
-  model,
-  records,
-  fetchImpl = globalThis.fetch,
-  timeoutMs = LLM_DEFAULTS.timeoutMs,
-}) {
-  const base = normalizeEndpoint(endpoint);
-  if (!base) return { ok: false, error: 'The model endpoint is not a valid HTTP(S) URL.' };
-  if (typeof model !== 'string' || !model.trim()) return { ok: false, error: 'No model name is configured.' };
-  if (!records?.length) return { ok: true, reactions: [], rejected: [], error: null };
+/**
+ * Validate reactions carried in a cache. Their original interpretedAt is
+ * mandatory so a delayed browser load cannot make an old headline young.
+ */
+export function validateCachedNewsReactions(entries, allowedSourceIds, { now = Date.now() } = {}) {
+  const allowed = allowedSourceIds instanceof Set ? allowedSourceIds : new Set(allowedSourceIds ?? []);
+  if (!Array.isArray(entries)) return { reactions: [], rejected: [] };
 
-  const allowed = new Set(records.map((record) => record.key));
-  let response;
-  try {
-    response = await fetchText(`${base}/api/generate`, {
-      fetchImpl,
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({
-        model: model.trim(),
-        prompt: buildNewsPrompt(records),
-        stream: false,
-        format: 'json',
-        options: { temperature: 0.2, top_p: 0.9, num_predict: 700 },
-      }),
-      timeoutMs,
-      maxBytes: 2 * 1024 * 1024,
-    });
-  } catch (error) {
-    return { ok: false, error: error.message || 'The local model could not be reached.' };
+  const reactions = [];
+  const rejected = [];
+  const seen = new Set();
+
+  for (const entry of entries.slice(0, 500)) {
+    const result = validateReaction(entry, allowed, seen);
+    if (result.error) {
+      rejected.push(result.error);
+      continue;
+    }
+    const interpretedAt = validTimestamp(entry.interpretedAt, { now, requireTimestamp: true });
+    if (interpretedAt === null) {
+      rejected.push(`Missing or invalid interpretedAt for "${entry.sourceId}".`);
+      continue;
+    }
+    seen.add(result.reaction.sourceId);
+    reactions.push({ ...result.reaction, interpretedAt });
   }
 
-  let payload;
-  try {
-    payload = JSON.parse(response.text);
-  } catch {
-    return { ok: false, error: 'The model endpoint returned malformed JSON.' };
-  }
-
-  if (typeof payload?.response !== 'string') {
-    return { ok: false, error: 'The model response did not include a response field.' };
-  }
-
-  const validated = validateModelReactions(payload.response, allowed);
-  return {
-    ok: validated.ok,
-    error: validated.error,
-    reactions: validated.reactions.map((reaction) => ({
-      ...reaction,
-      recordKey: reaction.sourceId,
-    })),
-    rejected: validated.rejected,
-  };
-}
-
-export async function checkModelConnection({ endpoint, fetchImpl = globalThis.fetch, timeoutMs = 6000 }) {
-  const base = normalizeEndpoint(endpoint);
-  if (!base) return { ok: false, error: 'The endpoint is not a valid HTTP(S) URL.', models: [] };
-
-  try {
-    const response = await fetchJson(`${base}/api/tags`, {
-      fetchImpl,
-      timeoutMs,
-      maxBytes: 512 * 1024,
-      headers: { accept: 'application/json' },
-    });
-    const models = Array.isArray(response.data?.models)
-      ? response.data.models.map((entry) => sanitizeText(entry?.name, 80)).filter(Boolean)
-      : [];
-    return { ok: true, error: null, models };
-  } catch (error) {
-    return {
-      ok: false,
-      error:
-        error.message ||
-        'Could not reach the model. Is Ollama running with this page allowed in OLLAMA_ORIGINS?',
-      models: [],
-    };
-  }
+  return { reactions, rejected };
 }

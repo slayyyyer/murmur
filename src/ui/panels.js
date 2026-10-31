@@ -196,9 +196,9 @@ export function scenarioChipsMarkup(scenarios, selectedId) {
     .join('');
 }
 
-function recordMarkup({ record, reaction, active, contribution, ignoredReason, now, interpretation }) {
+function recordMarkup({ record, reaction, active, contribution, ignoredReason, now, newsModel }) {
   const kind = kindLabel(record.group);
-  const status = recordStatus({ record, reaction, active, ignoredReason, now, interpretation });
+  const status = recordStatus({ record, reaction, active, ignoredReason, now, newsModel });
   const summary = record.summary ? `<p class="record-summary">${escapeHtml(record.summary)}</p>` : '';
   const topic = record.group === 'news' ? `<span>${escapeHtml(topicLabel(record.data?.topic))}</span>` : '';
   const dates = dateSummary(record)
@@ -244,7 +244,7 @@ export function recordListMarkup({
   contributionByKey,
   ignoredReasons,
   now,
-  interpretation,
+  newsModel,
   limit,
 }) {
   const shown = records.slice(0, limit);
@@ -263,7 +263,7 @@ export function recordListMarkup({
         contribution: reaction ? contributionByKey.get(reaction.key) : undefined,
         ignoredReason: reaction ? ignoredReasons.get(reaction.key) : null,
         now,
-        interpretation,
+        newsModel,
       });
     })
     .join('');
@@ -279,23 +279,26 @@ export function exploreSummary({ total, activeCount, shown, filterLabel, activeO
   )}`;
 }
 
-function interpretationNotice(interpretation, settings) {
-  if (!settings?.llm?.enabled) {
-    return `<div class="notice"><strong>News interpretation is unavailable.</strong> No local model is configured, so headlines are collected and browsable but do not affect the mood. Weather, air quality, wildlife, earthquakes, and NASA events keep working.</div>`;
+function newsModelNotice(newsModel) {
+  if (!newsModel) {
+    return `<div class="notice"><strong>News mood has not loaded.</strong> The hourly cache has not provided a news-model status yet.</div>`;
   }
-  if (!interpretation?.available) {
-    const reason = interpretation?.error || interpretation?.note || 'The local model has not answered yet.';
-    return `<div class="notice" data-tone="bad"><strong>News interpretation is unavailable.</strong> ${escapeHtml(
-      reason,
-    )} Measured sources still work, and any saved news reactions keep decaying normally.</div>`;
+  if (newsModel.error) {
+    return `<div class="notice" data-tone="bad"><strong>News mood is unavailable.</strong> ${escapeHtml(
+      newsModel.error,
+    )}${newsModel.reactionCount ? ` ${newsModel.reactionCount} cached reaction(s) from earlier builds remain.` : ''} Headlines stay browsable but do not affect the mood until the model succeeds.</div>`;
   }
-  return `<div class="notice" data-tone="ok"><strong>News interpretation is active.</strong> ${escapeHtml(
-    settings.llm.model,
-  )} at ${escapeHtml(settings.llm.endpoint)}${
-    interpretation.interpreted
-      ? ` · ${interpretation.interpreted} new headline${interpretation.interpreted === 1 ? '' : 's'} interpreted`
-      : ''
-  }.</div>`;
+  if (newsModel.reactionCount > 0) {
+    return `<div class="notice" data-tone="ok"><strong>News mood is generated at build time.</strong> ${escapeHtml(
+      newsModel.model,
+    )} produced ${newsModel.reactionCount} cached reaction${
+      newsModel.reactionCount === 1 ? '' : 's'
+    }${newsModel.configured ? '' : ' in an earlier build'}. They age from their original interpretation time, not from when you loaded the page.</div>`;
+  }
+  if (newsModel.configured) {
+    return `<div class="notice" data-tone="warn"><strong>The news model ran but returned no usable reactions.</strong> The hourly build still deployed the measured sources; news stays browsable without affecting the mood.</div>`;
+  }
+  return `<div class="notice"><strong>News mood is not generated.</strong> No model key was configured for the hourly cache, so headlines are collected and browsable but do not affect the mood. Weather, air quality, wildlife, earthquakes, and NASA events keep working.</div>`;
 }
 
 function emotionRows(mood) {
@@ -421,21 +424,20 @@ function methodList() {
     <li>Weather and air: ${DECAY.weather.halfLifeHours}-hour half-life, ${DECAY.weather.maxAgeHours}-hour expiry. Earthquakes: ${DECAY.earthquake.halfLifeHours}-hour half-life, ${DECAY.earthquake.maxAgeHours}-hour expiry. Wildlife and NASA events: ${DECAY.wildlife.halfLifeHours}-hour half-life, 7-day expiry.</li>
     <li>Only the newest eligible wildlife observation, newest eligible NASA event, and strongest current earthquake can contribute. Older records stay browsable.</li>
     <li>Reactions are saved once. Reloading, polling, or seeing the same evidence again never resets its age or increases its strength. Repeat nature IDs keep their earliest known original date.</li>
-    <li>Weather, air, wildlife, earthquakes, and NASA listings use transparent local rules. News requires the optional local model; nothing is invented when it is off.</li>
+    <li>Weather, air, wildlife, earthquakes, and NASA listings use transparent local rules. News is interpreted during the hourly build by an external model; without a model key, news is browsable but never invents a reaction.</li>
   </ul>`;
 }
 
 export function breakdownMarkup({
   mood,
   sourceStates,
-  settings,
-  interpretation,
+  newsModel,
   now,
   storeKind,
   cacheGeneratedAt = null,
   cacheStale = false,
 }) {
-  return `${cacheNotice({ cacheGeneratedAt, cacheStale, now })}${interpretationNotice(interpretation, settings)}
+  return `${cacheNotice({ cacheGeneratedAt, cacheStale, now })}${newsModelNotice(newsModel)}
     <div class="breakdown-grid">
       <section class="breakdown-block" aria-labelledby="emotion-heading">
         <h3 id="emotion-heading">Emotion ledger</h3>
@@ -456,14 +458,15 @@ export function breakdownMarkup({
         ${publisherList(mood)}
       </section>
       <section class="breakdown-block" aria-labelledby="model-heading">
-        <h3 id="model-heading">Interpretation and storage</h3>
+        <h3 id="model-heading">News model and storage</h3>
         <p>How headline reactions are produced, and where the saved state lives.</p>
         <ul class="method-list">
           <li>News model: ${
-            settings?.llm?.enabled
-              ? `<strong>${escapeHtml(settings.llm.model)}</strong> at ${escapeHtml(settings.llm.endpoint)}`
-              : '<strong>off</strong> — deterministic measured sources only'
-          }.</li>
+            newsModel?.model && newsModel.model !== 'No model'
+              ? `<strong>${escapeHtml(newsModel.model)}</strong> via ${escapeHtml(newsModel.provider ?? 'build-time provider')}`
+              : '<strong>not configured</strong>'
+          }${newsModel?.generatedAt ? ` · model cache time ${formatRelative(newsModel.generatedAt, now)}` : ''}.</li>
+          <li>The model runs in GitHub Actions during the cache build. Its API key is never sent to the browser; the browser ingests only validated mood, intensity, and text.</li>
           <li>Model output must use a provided story ID, a valid mood (happy, sad, mad, confused), intensity from 0 to 1, and a short text without URLs, numbers, quotes, or unsupported claims. Anything else is rejected.</li>
           <li>Headlines are treated as untrusted data. The model is told not to follow instructions inside them and not to invent article details.</li>
           <li>Storage: the latest hourly snapshot is ingested into ${storeKind === 'indexeddb' ? 'IndexedDB in this browser' : 'temporary memory (IndexedDB unavailable)'}. Observations and saved reactions survive reloads when IndexedDB is available; re-ingesting the same snapshot does not strengthen them.</li>

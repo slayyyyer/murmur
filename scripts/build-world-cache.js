@@ -1,24 +1,60 @@
 #!/usr/bin/env node
 /**
- * Run inside GitHub Actions (or locally with the relay running) after all
- * source adapters have fetched through the allowlist. The output is a static
- * snapshot; the browser never contacts a feed or the relay at runtime.
+ * Run inside GitHub Actions (or locally with the relay running). Fetches all
+ * sources, asks an external OpenAI-compatible model to interpret new
+ * headlines, carries forward earlier valid reactions, and writes one static
+ * cache for the browser. The model key never enters the browser.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { runRefresh } from '../src/app/runRefresh.js';
 import { createLoaders } from '../src/sources/loaders.js';
 import { createRepository } from '../src/store/repository.js';
 import { createMemoryStore } from '../src/store/memoryStore.js';
 import { dedupeRecords } from '../src/lib/dedupe.js';
-import { WORLD_CACHE_SCHEMA_VERSION } from '../src/config.js';
+import { DECAY, WORLD_CACHE_SCHEMA_VERSION } from '../src/config.js';
+import { HOUR_MS } from '../src/lib/time.js';
 import { sanitizeText } from '../src/lib/validate.js';
+import { interpretNewsWithModel, resolveNewsModelConfig } from '../src/ai/buildNewsModel.js';
+import { validateCachedNewsReactions } from '../src/ai/newsInterpretation.js';
 
 const MAX_SOURCE_RECORDS = 250;
 const MAX_CACHE_BYTES = 4 * 1024 * 1024;
+const NEWS_FUTURE_MS = 5 * 60_000;
 
 const proxyBase = process.env.MURMUR_PROXY?.trim();
 if (!proxyBase) {
   throw new Error('MURMUR_PROXY is required, for example http://127.0.0.1:8080');
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 12_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readPreviousCache() {
+  try {
+    const local = JSON.parse(await readFile(new URL('../data/world-cache.json', import.meta.url), 'utf8'));
+    if (local?.schemaVersion === 1 || local?.schemaVersion === WORLD_CACHE_SCHEMA_VERSION) return local;
+  } catch {
+    /* no local previous cache */
+  }
+
+  const url = process.env.PREVIOUS_CACHE_URL?.trim();
+  if (!url) return null;
+  const separator = url.includes('?') ? '&' : '?';
+  return fetchJsonWithTimeout(`${url}${separator}v=${Date.now()}`);
 }
 
 const now = Date.now();
@@ -54,9 +90,70 @@ if (!sources.some((source) => source.status === 'live')) {
   throw new Error('No source returned usable data; the previous Pages deployment will be kept.');
 }
 
+const newsRecords = deduped.records
+  .filter(
+    (record) =>
+      record.group === 'news' &&
+      record.originalAt <= now + NEWS_FUTURE_MS &&
+      now - record.originalAt <= DECAY.news.maxAgeHours * HOUR_MS,
+  )
+  .sort((a, b) => b.originalAt - a.originalAt);
+
+const newsByKey = new Map(newsRecords.map((record) => [record.key, record]));
+const previous = await readPreviousCache();
+const carried = validateCachedNewsReactions(previous?.newsReactions ?? [], new Set(newsByKey.keys()), { now });
+const previousByKey = new Map(carried.reactions.map((reaction) => [reaction.sourceId, reaction]));
+const pending = newsRecords.filter((record) => !previousByKey.has(record.key));
+
+const modelConfig = resolveNewsModelConfig(process.env);
+let modelResult = {
+  ok: modelConfig.configured,
+  error: null,
+  reactions: [],
+  rejected: [],
+  model: modelConfig.model,
+  provider: modelConfig.provider,
+};
+
+if (pending.length) {
+  modelResult = await interpretNewsWithModel({
+    records: pending,
+    config: modelConfig,
+    fetchImpl: fetch,
+    now,
+  });
+}
+
+const newReactions = modelResult.reactions.map((reaction) => ({
+  sourceId: reaction.sourceId,
+  mood: reaction.mood,
+  intensity: reaction.intensity,
+  text: reaction.text,
+  interpretedAt: now,
+}));
+
+const merged = new Map();
+for (const reaction of carried.reactions) merged.set(reaction.sourceId, reaction);
+for (const reaction of newReactions) merged.set(reaction.sourceId, reaction);
+const newsReactions = [...merged.values()].filter((reaction) => newsByKey.has(reaction.sourceId));
+
+const newsModel = {
+  provider: modelConfig.provider,
+  model: modelConfig.model,
+  configured: modelConfig.configured,
+  available: modelResult.ok,
+  error: modelResult.error ? sanitizeText(modelResult.error, 300) : null,
+  reactionCount: newsReactions.length,
+  interpretedThisRun: newReactions.length,
+  rejectedThisRun: modelResult.rejected?.length ?? 0,
+  generatedAt: now,
+};
+
 const payload = {
   schemaVersion: WORLD_CACHE_SCHEMA_VERSION,
   generatedAt: now,
+  newsModel,
+  newsReactions,
   sources,
 };
 const json = JSON.stringify(payload);
@@ -77,3 +174,10 @@ console.log(
 for (const source of sources) {
   console.log(`  ${source.sourceId.padEnd(12)} ${source.status.padEnd(12)} ${source.records.length} records`);
 }
+
+console.log(
+  `News model ${modelConfig.provider}/${modelConfig.model}: ` +
+    `${newsReactions.length} cached reactions (${newReactions.length} new, ${carried.reactions.length} carried), ` +
+    `${newsModel.rejectedThisRun} rejected, configured=${modelConfig.configured}, available=${newsModel.available}.`,
+);
+if (newsModel.error) console.log(`  Model note: ${newsModel.error}`);

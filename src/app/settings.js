@@ -1,35 +1,11 @@
-import { LLM_DEFAULTS } from '../config.js';
-import { normalizeEndpoint } from '../ai/newsInterpretation.js';
-
 export const SETTINGS_KEY = 'murmur.settings.v1';
 
 export function defaultSettings() {
-  return {
-    llm: {
-      enabled: LLM_DEFAULTS.enabled,
-      endpoint: LLM_DEFAULTS.endpoint,
-      model: LLM_DEFAULTS.model,
-    },
-    motion: 'auto',
-  };
+  return { motion: 'auto' };
 }
 
 export function normalizeSettings(raw) {
-  const fallback = defaultSettings();
-  if (!raw || typeof raw !== 'object') return fallback;
-
-  const endpoint = normalizeEndpoint(raw?.llm?.endpoint) ?? fallback.llm.endpoint;
-  const model =
-    typeof raw?.llm?.model === 'string' && raw.llm.model.trim()
-      ? raw.llm.model.trim().slice(0, 80)
-      : fallback.llm.model;
-
   return {
-    llm: {
-      enabled: Boolean(raw?.llm?.enabled),
-      endpoint,
-      model,
-    },
     motion: raw?.motion === 'reduced' ? 'reduced' : 'auto',
   };
 }

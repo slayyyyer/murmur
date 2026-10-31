@@ -37,12 +37,9 @@
           <span class="brand-tag">a small face for a big world</span>
         </a>
         <div class="header-tools">
-          <span class="model-pill" id="model-pill">News model: off</span>
+          <span class="model-pill" id="model-pill">News mood: waiting</span>
           <button class="ghost-button" id="motion-toggle" type="button" aria-pressed="false">
             Reduce motion
-          </button>
-          <button class="ghost-button" id="settings-open" type="button" aria-haspopup="dialog">
-            Model settings
           </button>
         </div>
       </header>
@@ -190,60 +187,6 @@
         </footer>
       </main>
     </div>
-
-    <dialog class="dialog" id="settings-dialog" aria-labelledby="settings-title">
-      <form id="settings-form" method="dialog" novalidate>
-        <div class="dialog-head">
-          <h2 id="settings-title">News interpretation</h2>
-          <button class="icon-button" type="button" id="settings-close" aria-label="Close settings">×</button>
-        </div>
-        <p class="dialog-intro">
-          Murmur can ask a local model, such as Ollama, to read headlines and propose a short mood for each one.
-          Headlines are sent only to the endpoint you choose and are treated as untrusted data. Model output is
-          validated before it can become a reaction.
-        </p>
-        <label class="field">
-          <span>Ollama endpoint</span>
-          <input
-            type="url"
-            id="llm-endpoint"
-            name="endpoint"
-            placeholder="http://localhost:11434"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </label>
-        <label class="field">
-          <span>Model</span>
-          <input
-            type="text"
-            id="llm-model"
-            name="model"
-            placeholder="llama3.1"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="llm-enabled" />
-          <span>Interpret world news with this model</span>
-        </label>
-        <p class="fine-print">
-          Ollama must allow this page as an origin, for example
-          <code>OLLAMA_ORIGINS=http://localhost:8080</code> before <code>ollama serve</code>. No API key is stored in
-          this app.
-        </p>
-        <p class="field-status" id="llm-test-result" role="status" aria-live="polite"></p>
-        <div class="dialog-actions">
-          <button class="ghost-button" type="button" id="llm-test">Test connection</button>
-          <button class="primary-button" type="submit" id="settings-save">Save settings</button>
-        </div>
-        <p class="fine-print">
-          If the model is off or unreachable, measured sources keep working and news is clearly marked as not
-          interpreted.
-        </p>
-      </form>
-    </dialog>
 
     <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
   </body>

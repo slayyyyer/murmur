@@ -8,6 +8,7 @@ import {
 import { fetchJson, SourceError } from '../sources/http.js';
 import { HOUR_MS } from '../lib/time.js';
 import { isPlainObject, safeHttpsUrl, sanitizeText, validTimestamp } from '../lib/validate.js';
+import { validateCachedNewsReactions } from '../ai/newsInterpretation.js';
 
 const SOURCE_BY_ID = new Map(SOURCE_DEFS.map((source) => [source.id, source]));
 const STATUSES = new Set(['live', 'empty', 'malformed', 'unavailable']);
@@ -86,7 +87,7 @@ export function validateWorldCache(payload, { now = Date.now() } = {}) {
   if (!isPlainObject(payload)) {
     throw new SourceError('The world cache is not a JSON object.', 'malformed');
   }
-  if (payload.schemaVersion !== WORLD_CACHE_SCHEMA_VERSION) {
+  if (payload.schemaVersion !== 1 && payload.schemaVersion !== WORLD_CACHE_SCHEMA_VERSION) {
     throw new SourceError('The world cache uses an unsupported schema version.', 'malformed');
   }
 
@@ -152,6 +153,33 @@ export function validateWorldCache(payload, { now = Date.now() } = {}) {
     });
   }
 
+  const newsKeys = new Set(
+    sources
+      .filter((source) => source.group === 'news')
+      .flatMap((source) => source.records.map((record) => record.key)),
+  );
+  const validatedReactions =
+    payload.schemaVersion === WORLD_CACHE_SCHEMA_VERSION
+      ? validateCachedNewsReactions(payload.newsReactions, newsKeys, { now })
+      : { reactions: [], rejected: [] };
+  const rawModel =
+    payload.schemaVersion === WORLD_CACHE_SCHEMA_VERSION && isPlainObject(payload.newsModel)
+      ? payload.newsModel
+      : {};
+  const newsModel = {
+    configured: rawModel.configured === true,
+    available: rawModel.available === true,
+    provider: sanitizeText(rawModel.provider, 80) || 'Not configured',
+    model: sanitizeText(rawModel.model, 120) || 'No model',
+    error: sanitizeText(rawModel.error, 300) || null,
+    reactionCount: validatedReactions.reactions.length,
+    interpretedThisRun: Number.isFinite(Number(rawModel.interpretedThisRun))
+      ? Math.max(0, Math.trunc(Number(rawModel.interpretedThisRun)))
+      : 0,
+    generatedAt:
+      validTimestamp(rawModel.generatedAt ?? generatedAt, { now, requireTimestamp: true }) ?? generatedAt,
+  };
+
   return {
     schemaVersion: WORLD_CACHE_SCHEMA_VERSION,
     generatedAt,
@@ -159,6 +187,9 @@ export function validateWorldCache(payload, { now = Date.now() } = {}) {
     staleHours: Math.max(0, (now - generatedAt) / HOUR_MS),
     sources,
     invalidRecords,
+    invalidReactions: validatedReactions.rejected.length,
+    newsModel,
+    newsReactions: validatedReactions.reactions,
   };
 }
 

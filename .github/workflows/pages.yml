@@ -46,6 +46,12 @@ jobs:
       - name: Build the hourly cache
         env:
           MURMUR_PROXY: http://127.0.0.1:8080
+          NEWS_MODEL_API_KEY: ${{ secrets.NEWS_MODEL_API_KEY }}
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          NEWS_MODEL_BASE_URL: ${{ vars.NEWS_MODEL_BASE_URL }}
+          NEWS_MODEL_NAME: ${{ vars.NEWS_MODEL_NAME }}
+          NEWS_MODEL_PROVIDER: ${{ vars.NEWS_MODEL_PROVIDER }}
+          PREVIOUS_CACHE_URL: https://slayyyyer.github.io/murmur/data/world-cache.json
         run: node scripts/build-world-cache.js
 
       - name: Assemble the static site

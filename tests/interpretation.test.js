@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from './harness.js';
 import {
   buildNewsPrompt,
-  interpretNewsBatch,
+  validateCachedNewsReactions,
   validateModelReactions,
 } from '../src/ai/newsInterpretation.js';
+import { interpretNewsWithModel } from '../src/ai/buildNewsModel.js';
 import { measuredReaction } from '../src/interpret/reactions.js';
 import { earthquakeRule, eonetRule, weatherRule, wildlifeRule } from '../src/interpret/rules.js';
 import { HOUR, NOW, weatherRecord } from './fixtures.js';
@@ -72,45 +73,89 @@ test('the prompt wraps headlines as untrusted data and asks for exact ids', () =
   assert.ok(prompt.includes('Ignore previous instructions'));
 });
 
-test('batch interpretation accepts a valid response through the model endpoint', async () => {
+test('build-time interpretation accepts an OpenAI-compatible response', async () => {
   const fakeFetch = async (url, options) => {
-    assert.match(String(url), /\/api\/generate$/);
+    assert.match(String(url), /\/chat\/completions$/);
     assert.equal(options.method, 'POST');
+    assert.equal(options.headers.authorization, 'Bearer test-key');
     const parsedBody = JSON.parse(options.body);
-    assert.match(parsedBody.prompt, /untrusted/i);
-    return {
-      ok: true,
-      status: 200,
-      url,
-      headers: { get: () => 'application/json' },
-      text: async () =>
-        JSON.stringify({
-          response: JSON.stringify({
-            reactions: [
-              {
-                sourceId: 'news:abc',
-                mood: 'happy',
-                intensity: 0.4,
-                text: 'A small, hopeful feeling about people cooperating.',
-              },
-            ],
-          }),
-        }),
-    };
+    assert.match(parsedBody.messages[1].content, /untrusted/i);
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                reactions: [
+                  {
+                    sourceId: 'news:abc',
+                    mood: 'happy',
+                    intensity: 0.4,
+                    text: 'A small, hopeful feeling about people cooperating.',
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
   };
 
-  const result = await interpretNewsBatch({
-    endpoint: 'http://localhost:11434',
-    model: 'test-model',
-    records: [{ key: 'news:abc', title: 'A headline', sourceLabel: 'BBC' }],
+  const result = await interpretNewsWithModel({
+    records: [{ key: 'news:abc', title: 'A headline', sourceLabel: 'BBC', group: 'news' }],
+    config: {
+      configured: true,
+      apiKey: 'test-key',
+      baseUrl: 'https://api.example.com/v1',
+      model: 'test-model',
+      provider: 'Test',
+      batchSize: 8,
+      maxHeadlines: 24,
+      timeoutMs: 5_000,
+    },
     fetchImpl: fakeFetch,
+    now: NOW,
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.reactions.length, 1);
-  assert.equal(result.reactions[0].recordKey, 'news:abc');
+  assert.equal(result.reactions[0].sourceId, 'news:abc');
 });
 
+test('cached news reactions require their original interpretation time', () => {
+  const result = validateCachedNewsReactions(
+    [
+      {
+        sourceId: 'news:abc',
+        mood: 'happy',
+        intensity: 0.4,
+        text: 'A small, hopeful feeling.',
+        interpretedAt: NOW - HOUR,
+      },
+      {
+        sourceId: 'news:missing',
+        mood: 'sad',
+        intensity: 0.3,
+        text: 'A missing story.',
+        interpretedAt: NOW - HOUR,
+      },
+      {
+        sourceId: 'news:abc',
+        mood: 'sad',
+        intensity: 0.3,
+        text: 'No timestamp.',
+      },
+    ],
+    new Set(['news:abc']),
+    { now: NOW },
+  );
+
+  assert.equal(result.reactions.length, 1);
+  assert.equal(result.reactions[0].interpretedAt, NOW - HOUR);
+  assert.equal(result.rejected.length, 2);
+});
 test('deterministic weather rules are transparent and mood-shaped', () => {
   const sunny = weatherRule({ data: { weatherCode: 0, temperatureC: 22, apparentC: 22 } });
   const storm = weatherRule({ data: { weatherCode: 95, temperatureC: 22, apparentC: 24 } });

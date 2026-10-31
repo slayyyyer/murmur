@@ -111,7 +111,7 @@ export function dateSummary(record) {
   return out;
 }
 
-export function recordStatus({ record, reaction, active, ignoredReason, now, interpretation }) {
+export function recordStatus({ record, reaction, active, ignoredReason, now, newsModel }) {
   if (reaction && active) return { label: 'Active reaction', tone: 'active' };
   if (reaction) {
     return {
@@ -124,9 +124,12 @@ export function recordStatus({ record, reaction, active, ignoredReason, now, int
     if (record.originalAt && now - record.originalAt > 48 * 3600 * 1000) {
       return { label: 'Expired for mood', tone: 'expired' };
     }
-    if (!interpretation?.configured) return { label: 'Not interpreted · model off', tone: 'unavailable' };
-    if (!interpretation?.available) return { label: 'Not interpreted · model unavailable', tone: 'unavailable' };
-    return { label: 'Awaiting interpretation', tone: 'recorded' };
+    if (!newsModel?.configured && !newsModel?.reactionCount) {
+      return { label: 'Not interpreted · model not configured', tone: 'unavailable' };
+    }
+    if (newsModel?.error) return { label: 'Not interpreted · model unavailable', tone: 'unavailable' };
+    if (newsModel?.reactionCount) return { label: 'No cached reaction', tone: 'recorded' };
+    return { label: 'Awaiting build-time interpretation', tone: 'recorded' };
   }
   return { label: 'Recorded · no active reaction', tone: 'recorded' };
 }
