@@ -4,35 +4,60 @@ A small animated face in Charlotte, North Carolina that reacts to public weather
 
 Murmur's mood is a **simulated emotional state**. It is a clock-driven calculation, not sentience, not a measurement of public opinion, and not a factual summary of the world. Every influence decays; nothing is refreshed into a stronger state by reloading.
 
-Plain HTML, CSS, and JavaScript ES modules. No framework, no build step, no runtime dependencies, and no Python.
+Plain HTML, CSS, and JavaScript ES modules. No framework, no runtime dependencies, no Python, and no server in production.
 
 ---
 
-## Run it
+## How the data reaches the browser
 
-Requires **Node.js 18.17+** (or Bun). The included server is dependency-free.
+GitHub Actions builds the world once an hour:
+
+1. The workflow starts the same allowlisted relay used in local development.
+2. Every adapter fetches its source through that relay or directly from the runner.
+3. `scripts/build-world-cache.js` dedupes the records and writes `data/world-cache.json`.
+4. The app and cache are uploaded as one GitHub Pages artifact.
+5. The browser fetches only that same-origin cache. It never contacts a feed, the relay, or a third-party API.
+
+This removes CORS and mixed-content problems from the browser and keeps the relay allowlist meaningful without running a public proxy. The cache is generated in CI and is not committed.
+
+The app checks for a new cache every ten minutes, matching GitHub Pages' ten-minute asset cache. Each request uses a versioned URL (`?v=<ten-minute bucket>`), and the interface always shows the cache's actual generation time.
+
+---
+
+## Run it locally
+
+Requires **Node.js 18.17+** or Bun. There is no install step.
+
+Start the local static server and relay:
 
 ```bash
 cd murmur
 npm start
+# or: bun proxy/server.js
 ```
 
-Open <http://127.0.0.1:8080>.
-
-With Bun:
+In a second terminal, build a cache through the relay:
 
 ```bash
-bun proxy/server.js
+MURMUR_PROXY=http://127.0.0.1:8080 npm run cache
 ```
 
-Optional environment variables:
+PowerShell:
+
+```powershell
+$env:MURMUR_PROXY="http://127.0.0.1:8080"; npm run cache
+```
+
+Then open <http://127.0.0.1:8080>. The server serves `data/world-cache.json` alongside the app. If the cache is missing, the page loads but reports that no hourly snapshot is available; saved records are still shown.
+
+Optional environment variables for the local server:
 
 ```bash
 PORT=8081 npm start          # different port
 HOST=0.0.0.0 npm start       # expose to your local network (for phone testing)
 ```
 
-The app must be served through this server. It provides the same-origin CORS relay that several feeds require. Opening `index.html` from the filesystem will leave news and earthquakes unavailable, because the relay routes do not exist there.
+`MURMUR_PROXY` is required by the cache builder. `npm start` supplies the relay at `http://127.0.0.1:8080` by default.
 
 ### Tests
 
@@ -42,7 +67,55 @@ npm test
 bun tests/run.js
 ```
 
-There is no install step. Tests use only `node:assert` and the project's ES modules.
+The suite has 53 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, model-output validation, and cache validation.
+
+---
+
+## Deploy to GitHub Pages
+
+The repository is <https://github.com/slayyyyer/murmur>. The workflow is `.github/workflows/pages.yml`.
+
+1. Push to `main`, or run **World cache and Pages** manually from the Actions tab.
+2. In **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**. This is a one-time repository setting; the workflow cannot enable Pages with the default `GITHUB_TOKEN`.
+3. After the first successful deployment, the site is at <https://slayyyyer.github.io/murmur/>.
+
+The workflow runs:
+
+- hourly at minute 17 (`17 * * * *`, UTC),
+- on every push to `main`,
+- on manual dispatch.
+
+It runs the tests, starts the relay on the runner, builds the cache, creates a `dist/` directory with only the app and `data/world-cache.json`, and deploys that artifact. `data/` and `dist/` are gitignored.
+
+If every source fails, the cache builder exits non-zero and the previous successful Pages deployment stays online. Partial failures still deploy, with each source's status shown in the interface. A cache older than two hours is labeled stale; GitHub cron can be delayed, and scheduled workflows can be disabled after prolonged repository inactivity.
+
+No secrets are used. All sources are public and keyless. The production site has no server process.
+
+### Cache format and validation
+
+`data/world-cache.json` has this shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "generatedAt": 1761945102029,
+  "sources": [
+    {
+      "sourceId": "weather",
+      "label": "Charlotte weather",
+      "provider": "Open-Meteo forecast API",
+      "homepage": "https://open-meteo.com/",
+      "group": "weather",
+      "status": "live",
+      "error": null,
+      "fetchedAt": 1761945102029,
+      "records": []
+    }
+  ]
+}
+```
+
+Before anything reaches IndexedDB, `src/app/worldCache.js` checks the schema version, generation time, source IDs, statuses, record groups, HTTPS links, timestamps, and small per-record data size. Invalid records are dropped. An invalid envelope is rejected so it cannot overwrite a good saved mood. Re-ingesting the same snapshot never creates a second reaction, resets an age, or increases an intensity.
 
 ---
 
@@ -52,8 +125,8 @@ There is no install step. Tests use only `node:assert` and the project's ES modu
 - **Mood sentence** — a short description of the current simulated mood.
 - **Three thought bubbles** — the strongest active influences, with source and decayed strength. Empty bubbles say so instead of inventing an influence.
 - **Charlotte weather and modeled air quality** — current observation, source link, observation time, and whether it is outside the six-hour mood window.
-- **Refresh world** — manual refresh, with a ten-minute automatic refresh and a status line explaining what each source did.
-- **Source availability** — one chip per source with live/cached/empty/malformed/unavailable state and a direct link.
+- **Reload world cache** — manual cache re-check, with a ten-minute automatic check and a status line showing the cache generation time and source outcomes.
+- **Source availability** — one chip per source with hourly-cache/empty/malformed/unavailable state and a direct link.
 - **Explore the world** — expandable, filterable by nine news topics plus weather, air, earthquakes, wildlife, and NASA events. Distinguishes active reactions from recorded-but-not-governing inputs. Each record shows source, link, original date, update/retrieval dates, and status.
 - **Sources and mood** — expandable ledger of each emotion's strength, supporting records, per-group budgets, news slot allocation, publisher caps, source statuses, and the calculation rules.
 - **Expression preview** — five clearly fictional scenarios, fixed by hand. They never affect the live mood.
@@ -64,25 +137,25 @@ All times are displayed in Charlotte's time zone.
 
 ## Sources
 
-| Input | Provider | Endpoint | Browser access |
+| Input | Provider | Endpoint | Fetch route |
 | --- | --- | --- | --- |
-| Charlotte weather | Open-Meteo | `https://api.open-meteo.com/v1/forecast` | Direct, CORS `*` |
-| Modeled air quality | Open-Meteo | `https://air-quality-api.open-meteo.com/v1/air-quality` | Direct, CORS `*` |
-| World news | BBC | `https://feeds.bbci.co.uk/news/...` | Via local relay (no CORS header) |
-| World news | Al Jazeera | `https://www.aljazeera.com/xml/rss/all.xml` | Via local relay (no CORS header) |
-| Science and space | NASA | `https://www.nasa.gov/feed/` | Via local relay for consistency |
-| World and topics | The Guardian | `https://www.theguardian.com/.../rss` | Via local relay (no CORS header) |
-| Community and progress | Positive News | `https://www.positive.news/feed/` | Via local relay (no CORS header) |
-| Charlotte and Carolinas | WFAE | `https://www.wfae.org/news.rss` | Via local relay (no CORS header) |
-| Recent earthquakes | USGS | `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson` | Via local relay, with IPv4 preference |
-| Wildlife and plants | iNaturalist | `https://api.inaturalist.org/v1/observations` | Direct, CORS `*` |
-| Fires, storms, volcanoes | NASA EONET | `https://eonet.gsfc.nasa.gov/api/v3/events?status=open` | Direct, CORS `*` |
+| Charlotte weather | Open-Meteo | `https://api.open-meteo.com/v1/forecast` | Action direct → cache |
+| Modeled air quality | Open-Meteo | `https://air-quality-api.open-meteo.com/v1/air-quality` | Action direct → cache |
+| World news | BBC | `https://feeds.bbci.co.uk/news/...` | Action via relay → cache |
+| World news | Al Jazeera | `https://www.aljazeera.com/xml/rss/all.xml` | Action via relay → cache |
+| Science and space | NASA | `https://www.nasa.gov/feed/` | Action via relay → cache |
+| World and topics | The Guardian | `https://www.theguardian.com/.../rss` | Action via relay → cache |
+| Community and progress | Positive News | `https://www.positive.news/feed/` | Action via relay → cache |
+| Charlotte and Carolinas | WFAE | `https://www.wfae.org/news.rss` | Action via relay → cache |
+| Recent earthquakes | USGS | `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson` | Action via relay, IPv4 preference → cache |
+| Wildlife and plants | iNaturalist | `https://api.inaturalist.org/v1/observations` | Action direct → cache |
+| Fires, storms, volcanoes | NASA EONET | `https://eonet.gsfc.nasa.gov/api/v3/events?status=open` | Action direct → cache |
 
-Endpoints were checked before integration. All are public and keyless. Open-Meteo's air quality is a **modeled** field, not a local sensor, and the UI says so.
+Open-Meteo's air quality is a **modeled** field, not a local sensor, and the UI says so. All endpoints are public and keyless.
 
 ### Why a relay exists
 
-BBC, Al Jazeera, The Guardian, Positive News, and WFAE do not send `Access-Control-Allow-Origin`, so a browser cannot read them directly. The included server exposes exactly one relay route:
+BBC, Al Jazeera, The Guardian, Positive News, and WFAE do not send `Access-Control-Allow-Origin`. The included server exposes exactly one relay route:
 
 ```
 GET /api/proxy?url=<allowlisted HTTPS URL>
@@ -93,38 +166,34 @@ GET /api/proxy?url=<allowlisted HTTPS URL>
 - accepts `GET`/`HEAD` only,
 - requires HTTPS with no credentials, IP literal, or non-default port,
 - rejects paths containing `..`,
-- validates redirects against the same allowlist (Guardian topic feeds redirect to `/us/...`),
+- validates redirects against the same allowlist,
 - uses a 12-second deadline and a 3 MiB ceiling,
 - accepts only feed/JSON/text content types,
 - returns no cookies and sets no-store,
-- prefers IPv4 when resolving, so a broken IPv6 route on a host cannot take down the USGS feed (this was observed during development).
+- prefers IPv4 when resolving, so a broken IPv6 route cannot take down the USGS feed.
 
-The USGS feed supports CORS, but it is routed through the relay for that IPv4 reliability. If you change a feed URL, update both `src/config.js` and `proxy/allowlist.js`.
-
-The proxy is a local convenience, not a public service. It binds to `127.0.0.1` by default and has no request-body handling.
+The relay runs inside the Actions runner and during local cache generation. The deployed browser never calls it. If you change a feed URL, update both `src/config.js` and `proxy/allowlist.js`.
 
 ---
 
 ## Optional local model (Ollama)
 
-News needs a model to become an emotional influence. Without one, headlines are still collected, dated, linked, and browsable, but they do **not** affect the mood; the interface labels that state explicitly. Weather, air, earthquakes, wildlife, and EONET continue working because their rules are deterministic.
+News needs a model to become an emotional influence. Without one, headlines are still collected, dated, linked, and browsable, but they do **not** affect the mood. Weather, air, earthquakes, wildlife, and EONET continue working because their rules are deterministic.
 
 1. Install Ollama from <https://ollama.com/>.
-2. Allow this page's origin, then start the server:
+2. Allow the local and Pages origins, then start the server:
 
    macOS / Linux:
 
    ```bash
-   OLLAMA_ORIGINS=http://localhost:8080 ollama serve
+   OLLAMA_ORIGINS=http://localhost:8080,https://slayyyyer.github.io ollama serve
    ```
 
    Windows PowerShell:
 
    ```powershell
-   $env:OLLAMA_ORIGINS="http://localhost:8080"; ollama serve
+   $env:OLLAMA_ORIGINS="http://localhost:8080,https://slayyyyer.github.io"; ollama serve
    ```
-
-   If you use `http://127.0.0.1:8080` instead, include that exact origin too.
 
 3. Pull a small instruction model:
 
@@ -133,9 +202,9 @@ News needs a model to become an emotional influence. Without one, headlines are 
    ```
 
 4. In Murmur, open **Model settings**, set the endpoint (`http://localhost:11434`) and model, choose **Interpret world news with this model**, and press **Test connection**.
-5. Save, then **Refresh world**. Newly eligible headlines are interpreted in batches of eight, up to sixteen per refresh.
+5. Save, then **Reload world cache**. Newly eligible headlines are interpreted in batches of eight, up to sixteen per check.
 
-No API key is used or stored. The browser calls the endpoint directly; there is no server-side key. If you point the app at a remote model endpoint, that endpoint must allow the app origin and must not require a secret embedded in frontend code.
+No API key is used or stored. The browser calls the endpoint directly. Some browsers block HTTPS→localhost requests as mixed content; the local server at `http://localhost:8080` is the most reliable way to use the model. The hourly cache and all measured sources work without it.
 
 ### What the model is asked for
 
@@ -154,9 +223,7 @@ The model receives **only the headline, publisher, and story ID** — never arti
 }
 ```
 
-The perspective values compassion, cooperation, curiosity, and fairness. `mad` means fair-minded frustration at unfairness or harm, never hatred.
-
-Output is rejected if it contains an unknown story ID, a duplicate ID, a mood outside `happy/sad/mad/confused`, an intensity outside 0–1, an empty or overlong text, a URL, a digit, a quotation mark, or words asserting casualties or harm (`killed`, `injured`, `destroyed`, `safe`, `confirmed`, and similar). A rejected item simply does not become a reaction. This is a heuristic guard, not a truth check; the prompt is the primary constraint.
+Output is rejected if it contains an unknown story ID, a duplicate ID, a mood outside `happy/sad/mad/confused`, an intensity outside 0–1, an empty or overlong text, a URL, a digit, a quotation mark, or words asserting casualties or harm (`killed`, `injured`, `destroyed`, `safe`, `confirmed`, and similar). A rejected item simply does not become a reaction.
 
 ---
 
@@ -214,7 +281,7 @@ Measured inputs age from their own observation time, not from when they were fet
 
 Observations and reactions live in IndexedDB (`murmur`, version 1) in the browser. The database stores observations, reactions, per-source status, and small metadata records. If IndexedDB is unavailable, the app falls back to an in-memory store and says so.
 
-A reaction is saved once, keyed by its evidence. Reloading, refreshing, polling, or seeing the same observation again:
+A reaction is saved once, keyed by its evidence. Reloading, checking for a new cache, polling, or seeing the same observation again:
 
 - does not create a second reaction,
 - does not change its intensity,
@@ -236,29 +303,21 @@ For repeated nature event IDs (iNaturalist observation IDs, EONET event IDs), th
 
 ## Reliability and statuses
 
-Each source has its own loader, deadline (12 s), byte ceiling (3 MiB JSON, 2 MiB feed), and status:
+The cache builder gives each source its own loader, deadline (12 s), byte ceiling (3 MiB JSON, 2 MiB feed), and status:
 
 | Status | Meaning |
 | --- | --- |
-| `live` | Fresh response with at least one valid record |
+| `live` | The cache build got a fresh response with at least one valid record |
 | `empty` | Structurally valid response with no eligible records |
-| `cached` | Fetch failed, but dated records from a previous success are retained |
-| `malformed` | Envelope or fields were invalid (for example HTML instead of a feed) |
-| `unavailable` | Network failure, timeout, HTTP error, or the relay is missing |
+| `cached` | A browser-side failure left older dated records in place |
+| `malformed` | Envelope or fields were invalid |
+| `unavailable` | Network failure, timeout, HTTP error, or the relay was missing |
 
 Valid empty is distinct from malformed: an empty USGS feature array is empty; a missing feature array is malformed. An RSS channel with zero items is empty; an HTML error page is malformed.
 
-Validation covers:
+Validation covers timestamps, geometry, eligibility, HTTPS links, text, news publication dates, and date-only observations. Failed sources do not block the others.
 
-- timestamps (finite, plausible, not implausibly future),
-- geometry (latitude/longitude ranges, depth sanity),
-- eligibility (research grade, not captive, open EONET event, allowed category),
-- links (HTTPS only, no credentials, no IP literals, no non-default ports),
-- text (tags stripped, control characters removed, bounded length),
-- news publication dates (required, within the ingest window),
-- date-only observations (flagged and labelled "date only").
-
-Failed sources do not block other sources. `runRefresh` runs all loaders concurrently and converts a thrown loader into that loader's status.
+If the cache request fails, the page keeps every previously saved record and reaction and labels the failure. It does not substitute demo data.
 
 ---
 
@@ -266,8 +325,8 @@ Failed sources do not block other sources. `runRefresh` runs all loaders concurr
 
 - No accounts, analytics, trackers, or third-party scripts.
 - No API keys in frontend code. The optional model needs none.
-- Observations and reactions stay in the browser's IndexedDB.
-- Wildlife records store the taxon, a coarse distance rounded to 5 km (or 10/100 km farther away), the observation link, and dates. They **do not** store observer identities, photos, place guesses, or precise coordinates. The distance is computed transiently from the API response and discarded.
+- The browser downloads one same-origin JSON cache and stores observations and reactions in IndexedDB.
+- The hourly cache contains only public records. Wildlife entries store the taxon, a coarse distance rounded to 5 km (or 10/100 km farther away), the observation link, and dates. They **do not** store observer identities, photos, place guesses, or precise coordinates.
 - Headlines leave the browser only when a local model is explicitly configured, and then only to the endpoint you entered.
 - The relay sets `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`.
 
@@ -292,8 +351,8 @@ Failed sources do not block other sources. `runRefresh` runs all loaders concurr
 index.html                 Semantic shell and static controls
 styles.css                 Lavender design system, face styles, reduced motion
 src/
-  config.js                Location, budgets, decay, feeds, publishers, previews
-  main.js                  Bootstrap, refresh orchestration, rendering, events
+  config.js                Location, budgets, decay, feeds, publishers, cache URL
+  main.js                  Bootstrap, cache refresh, rendering, events
   lib/
     time.js                Timestamp parsing, decay formula, Charlotte formatting
     validate.js            URL, text, coordinate, distance, entity validation
@@ -316,8 +375,9 @@ src/
   ai/
     newsInterpretation.js  Ollama client, prompt, strict output validation
   app/
-    runRefresh.js          Isolated fetch/ingest/reaction pipeline
-    sourceState.js         Cached/live/malformed state derivation
+    runRefresh.js          Isolated ingest/reaction pipeline
+    worldCache.js          Static cache fetching and validation
+    sourceState.js         Browser source-state derivation
     settings.js            localStorage settings with validation
   store/
     indexedDb.js           IndexedDB adapter
@@ -328,10 +388,15 @@ src/
     format.js              Shared labels, dates, status text
     moodView.js            Bubbles and mood line rendering
     panels.js              Conditions, availability, explore, breakdown
+scripts/
+  build-world-cache.js     Hourly snapshot builder
 proxy/
   server.js                Static server + allowlisted relay
   allowlist.js             The complete upstream allowlist
-tests/                     Decay, expiry, persistence, adapters, model output
+.github/workflows/
+  pages.yml                Hourly cache, tests, artifact, Pages deployment
+tests/                     Decay, expiry, persistence, adapters, cache, model output
+data/world-cache.json      Generated locally or in CI; gitignored
 ```
 
 ---
@@ -340,11 +405,13 @@ tests/                     Decay, expiry, persistence, adapters, model output
 
 - **Location, budgets, decay, feeds, publishers, and previews:** `src/config.js`.
 - **Relay allowlist:** `proxy/allowlist.js`.
+- **Cache path and staleness threshold:** `WORLD_CACHE_URL` and `WORLD_CACHE_MAX_AGE_HOURS` in `src/config.js`.
 - **Model endpoint and model name:** the in-app Model settings dialog (stored in `localStorage`).
-- **Auto refresh interval and tick interval:** `AUTO_REFRESH_MS` and `TICK_MS` in `src/config.js`.
+- **Auto cache check interval and tick interval:** `AUTO_REFRESH_MS` and `TICK_MS` in `src/config.js`.
+- **Hourly schedule:** `.github/workflows/pages.yml` (UTC cron).
 - **Batch limits:** `NEWS_BATCH_SIZE` and `NEWS_BATCHES_PER_REFRESH` in `src/config.js`.
 
-If you add a feed, add it to `FEEDS` and add its origin/path prefix to the allowlist. If a feed has CORS enabled, the adapter still uses the relay by design, so the proxy must permit it.
+If you add a feed, add it to `FEEDS` and add its origin/path prefix to the allowlist. Rebuild the cache after changing any source endpoint.
 
 ---
 
@@ -352,15 +419,17 @@ If you add a feed, add it to `FEEDS` and add its origin/path prefix to the allow
 
 - The face is a fiction. It does not understand news, feel anything, or predict anything.
 - News reactions require the optional model. Without it, the 60% news budget is simply unused, which makes the face much quieter by design.
-- Environmental reactions are hand-written rules, not analysis. Weather and air rules are intentionally simple.
+- Environmental reactions are hand-written rules, not analysis.
 - Open-Meteo air quality is modeled, not measured by a local sensor.
-- EONET is filtered to fires, severe storms, and volcanoes; sea/lake ice and other categories are ignored.
+- EONET is filtered to fires, severe storms, and volcanoes; other categories are ignored.
 - iNaturalist requests research-grade, licensed, non-captive observations. Some eligible observations may still be omitted when the API lacks a usable date or link.
 - No demo data is included or substituted. Empty and failed states are shown as such.
-- The model validator blocks numbers, quotes, URLs, and common harm claims in reaction text. That reduces invented detail but cannot prove a reaction is well-judged.
+- GitHub cron is best-effort and can be delayed. Scheduled workflows may be disabled after 60 days of repository inactivity; run the workflow manually to re-enable the schedule.
+- GitHub Pages serves assets with a ten-minute cache. The app accounts for this, but a newly deployed cache can take up to ten minutes to appear.
+- Weather and air expire after six hours, so a badly delayed cache naturally removes them from the mood.
 - Feed summaries are publisher-provided and may lag or change. Murmur never fetches article pages.
-- The relay is a local development convenience. It has no authentication, rate limiting, or multi-user isolation; do not expose it to the public internet.
+- The relay is for local development and CI. It has no authentication or rate limiting; do not expose it to the public internet.
 - Times use `America/New_York`, which includes daylight saving changes.
-- A single browser tab owns the data. Multiple tabs can open the same IndexedDB database; the app does not coordinate refreshes between them.
+- A single browser tab owns the data. Multiple tabs can open the same IndexedDB database; the app does not coordinate cache checks between them.
 
 No Python is used anywhere.

@@ -3,7 +3,13 @@
  * visible status becomes "cached" so the difference from a live response is
  * explicit.
  */
-export function buildSourceStates({ outcomes = [], records = [], previousStates = [], now = Date.now() }) {
+export function buildSourceStates({
+  outcomes = [],
+  records = [],
+  previousStates = [],
+  now = Date.now(),
+  attemptAt = now,
+}) {
   const previousById = new Map((previousStates ?? []).map((state) => [state.sourceId, state]));
 
   return outcomes.map((outcome) => {
@@ -22,8 +28,8 @@ export function buildSourceStates({ outcomes = [], records = [], previousStates 
       error: outcome.error ?? null,
       recordCount,
       detail: outcome.detail ?? null,
-      lastAttemptAt: now,
-      lastSuccessAt: isFresh ? now : previous?.lastSuccessAt ?? null,
+      lastAttemptAt: attemptAt,
+      lastSuccessAt: isFresh ? outcome.fetchedAt ?? now : previous?.lastSuccessAt ?? null,
     };
   });
 }

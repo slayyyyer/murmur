@@ -61,7 +61,18 @@ export function conditionMarkup({ kind, record, sourceState, now = Date.now() })
   const isWeather = kind === 'weather';
   const heading = isWeather ? 'Charlotte weather' : 'Charlotte air quality';
   const tone = sourceState ? sourceTone(sourceState.status) : 'warn';
-  const shortStatus = sourceState ? SHORT_STATUS[sourceState.status] ?? 'Waiting' : 'Waiting';
+  const shortStatus = sourceState
+    ? sourceState.fromSnapshot
+      ? sourceState.status === 'live'
+        ? 'Hourly cache'
+        : sourceState.status === 'empty'
+          ? 'Cache: empty'
+          : SHORT_STATUS[sourceState.status] ?? 'Cache'
+      : SHORT_STATUS[sourceState.status] ?? 'Waiting'
+    : 'Waiting';
+  const cacheMeta = sourceState?.fromSnapshot
+    ? ` · hourly cache ${formatRelative(sourceState.cacheGeneratedAt, now)}`
+    : '';
   const head = `<div class="condition-head"><h2 id="${kind}-heading">${heading}</h2><span class="source-state" data-tone="${tone}" title="${escapeHtml(
     sourceState?.error ?? '',
   )}">${shortStatus}</span></div>`;
@@ -76,7 +87,7 @@ export function conditionMarkup({ kind, record, sourceState, now = Date.now() })
       <p class="condition-meta">${
         sourceState?.error
           ? escapeHtml(sourceState.error)
-          : `Refresh to load ${isWeather ? 'Open-Meteo weather' : 'modeled air quality'}. Previously saved observations are kept when a source fails.`
+          : `Reload the hourly cache to load ${isWeather ? 'Open-Meteo weather' : 'modeled air quality'}. Previously saved observations are kept when a source fails.`
       }</p>`;
   }
 
@@ -109,7 +120,7 @@ export function conditionMarkup({ kind, record, sourceState, now = Date.now() })
       <p class="condition-meta">Observed ${formatDateTime(observedAt)} · ${formatRelative(
         observedAt,
         now,
-      )}${stale ? ' · outside the 6-hour mood window' : ''} · ${sourceLink(record.url, 'Open-Meteo')}</p>`;
+      )}${stale ? ' · outside the 6-hour mood window' : ''}${cacheMeta} · ${sourceLink(record.url, 'Open-Meteo')}</p>`;
   }
 
   const data = record.data ?? {};
@@ -129,13 +140,22 @@ export function conditionMarkup({ kind, record, sourceState, now = Date.now() })
       .join('')}</dl>
     <p class="condition-meta">Modeled, not a sensor reading · observed ${formatDateTime(
       observedAt,
-    )} · ${formatRelative(observedAt, now)}${stale ? ' · outside the 6-hour mood window' : ''} · ${sourceLink(
+    )} · ${formatRelative(observedAt, now)}${stale ? ' · outside the 6-hour mood window' : ''}${cacheMeta} · ${sourceLink(
       record.url,
       'Open-Meteo',
     )}</p>`;
 }
 
-export function availabilityMarkup(sourceStates, { now = Date.now(), storeKind = 'indexeddb', lastRefreshAt = null } = {}) {
+export function availabilityMarkup(
+  sourceStates,
+  {
+    now = Date.now(),
+    storeKind = 'indexeddb',
+    lastRefreshAt = null,
+    cacheGeneratedAt = null,
+    cacheStale = false,
+  } = {},
+) {
   const byId = new Map((sourceStates ?? []).map((state) => [state.sourceId, state]));
   const chips = SOURCE_DEFS.map((definition) => {
     const state = byId.get(definition.id);
@@ -149,11 +169,19 @@ export function availabilityMarkup(sourceStates, { now = Date.now(), storeKind =
   }).join('');
 
   const live = (sourceStates ?? []).filter((state) => state.status === 'live').length;
+  const answered = (sourceStates ?? []).filter(
+    (state) => state.status === 'live' || state.status === 'empty',
+  ).length;
+  const cacheTime = cacheGeneratedAt
+    ? `hourly cache generated ${formatRelative(cacheGeneratedAt, now)}`
+    : lastRefreshAt
+      ? `cache loaded ${formatRelative(lastRefreshAt, now)}`
+      : 'no cache time';
   const note = sourceStates?.length
-    ? `${live} of ${SOURCE_DEFS.length} sources live · last checked ${
-        lastRefreshAt ? formatRelative(lastRefreshAt, now) : 'just now'
+    ? `${answered} of ${SOURCE_DEFS.length} sources answered (${live} live) · ${cacheTime}${
+        cacheStale ? ' · stale' : ''
       } · ${storeKind === 'indexeddb' ? 'saved in IndexedDB' : 'temporary memory only'}`
-    : `No source check yet · ${storeKind === 'indexeddb' ? 'IndexedDB ready' : 'IndexedDB unavailable, using memory'}`;
+    : `No hourly cache loaded yet · ${storeKind === 'indexeddb' ? 'IndexedDB ready' : 'IndexedDB unavailable, using memory'}`;
 
   return { chips, note };
 }
@@ -364,12 +392,24 @@ function sourceTable(sourceStates, now) {
   </table></div>`;
 }
 
+function cacheNotice({ cacheGeneratedAt, cacheStale, now }) {
+  if (!cacheGeneratedAt) {
+    return `<div class="notice" data-tone="bad"><strong>No hourly cache loaded.</strong> Murmur could not read the static snapshot published by GitHub Actions. Previously saved records are still shown.</div>`;
+  }
+  return `<div class="notice" data-tone="${cacheStale ? 'bad' : 'ok'}"><strong>Hourly snapshot.</strong> GitHub Actions generated this world cache ${escapeHtml(
+    formatRelative(cacheGeneratedAt, now),
+  )}. The browser ingests that snapshot; it never contacts feeds directly.${
+    cacheStale ? ' The cache is older than two hours, so GitHub Actions may be delayed or disabled.' : ''
+  }</div>`;
+}
+
 function methodList() {
   const newsSlots = NEWS_TOPICS.length * NEWS_SLOTS_PER_TOPIC;
   return `<ul class="method-list">
     <li>Every reaction contributes <strong>intensity × slot weight × 2<sup>−age ÷ half-life</sup></strong>. The strongest aggregate emotion sets the face; below ${CALM_THRESHOLD.toFixed(
       2,
     )}, the face is calm.</li>
+    <li>World data is fetched hourly by GitHub Actions through the local allowlist relay and published as one static cache. The browser only reads that same-origin snapshot; it never contacts a feed directly.</li>
     <li>News gets ${formatPercent(BUDGETS.news)} across ${newsSlots} slots — ${NEWS_SLOTS_PER_TOPIC} per topic, each worth ${formatPercent(
       NEWS_SLOT_WEIGHT,
       1,
@@ -385,8 +425,17 @@ function methodList() {
   </ul>`;
 }
 
-export function breakdownMarkup({ mood, sourceStates, settings, interpretation, now, storeKind }) {
-  return `${interpretationNotice(interpretation, settings)}
+export function breakdownMarkup({
+  mood,
+  sourceStates,
+  settings,
+  interpretation,
+  now,
+  storeKind,
+  cacheGeneratedAt = null,
+  cacheStale = false,
+}) {
+  return `${cacheNotice({ cacheGeneratedAt, cacheStale, now })}${interpretationNotice(interpretation, settings)}
     <div class="breakdown-grid">
       <section class="breakdown-block" aria-labelledby="emotion-heading">
         <h3 id="emotion-heading">Emotion ledger</h3>
@@ -417,7 +466,7 @@ export function breakdownMarkup({ mood, sourceStates, settings, interpretation, 
           }.</li>
           <li>Model output must use a provided story ID, a valid mood (happy, sad, mad, confused), intensity from 0 to 1, and a short text without URLs, numbers, quotes, or unsupported claims. Anything else is rejected.</li>
           <li>Headlines are treated as untrusted data. The model is told not to follow instructions inside them and not to invent article details.</li>
-          <li>Storage: ${storeKind === 'indexeddb' ? 'IndexedDB in this browser' : 'temporary memory (IndexedDB unavailable)'}. Observations and saved reactions survive reloads when IndexedDB is available.</li>
+          <li>Storage: the latest hourly snapshot is ingested into ${storeKind === 'indexeddb' ? 'IndexedDB in this browser' : 'temporary memory (IndexedDB unavailable)'}. Observations and saved reactions survive reloads when IndexedDB is available; re-ingesting the same snapshot does not strengthen them.</li>
           <li>Wildlife records store taxon names, a coarse distance, and the observation link — never observer identities, photos, place guesses, or precise coordinates.</li>
         </ul>
       </section>

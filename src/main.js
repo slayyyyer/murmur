@@ -8,8 +8,10 @@ import {
   PREVIEW_SCENARIOS,
   RECORD_PAGE_SIZE,
   TICK_MS,
+  WORLD_CACHE_MAX_AGE_HOURS,
+  WORLD_CACHE_URL,
 } from './config.js';
-import { createLoaders } from './sources/loaders.js';
+import { loadWorldCache } from './app/worldCache.js';
 import { runRefresh } from './app/runRefresh.js';
 import { buildSourceStates } from './app/sourceState.js';
 import { loadSettings, saveSettings } from './app/settings.js';
@@ -60,8 +62,10 @@ const state = {
   },
   busy: false,
   lastRefreshAt: null,
+  cacheGeneratedAt: null,
+  cacheStale: false,
   nextRefreshAt: null,
-  refreshNote: 'Murmur has not checked its sources yet this session.',
+  refreshNote: 'Murmur has not loaded the hourly world cache yet.',
   exploreFilter: 'all',
   exploreActiveOnly: false,
   exploreLimit: RECORD_PAGE_SIZE,
@@ -130,7 +134,12 @@ function renderMood() {
     : state.mood.description;
   $('mood-time').textContent = waking
     ? 'No refresh yet.'
-    : moodTimeText({ mood: state.mood, lastRefreshAt: state.lastRefreshAt, now: state.now });
+    : moodTimeText({
+        mood: state.mood,
+        lastRefreshAt: state.lastRefreshAt,
+        cacheGeneratedAt: state.cacheGeneratedAt,
+        now: state.now,
+      });
   $('bubbles').innerHTML = waking ? wakingBubblesMarkup() : bubblesMarkup(state.mood);
 
   document.documentElement.style.setProperty('--mood-tint', copy.accent);
@@ -156,6 +165,8 @@ function renderAvailability() {
     now: state.now,
     storeKind: state.storeKind,
     lastRefreshAt: state.lastRefreshAt,
+    cacheGeneratedAt: state.cacheGeneratedAt,
+    cacheStale: state.cacheStale,
   });
   $('source-chips').innerHTML = chips;
   $('availability-note').textContent = note;
@@ -225,6 +236,8 @@ function renderBreakdown() {
     interpretation: interpretationForDisplay(),
     now: state.now,
     storeKind: state.storeKind,
+    cacheGeneratedAt: state.cacheGeneratedAt,
+    cacheStale: state.cacheStale,
   });
 }
 
@@ -279,15 +292,15 @@ function renderRefreshStatus() {
 function renderNextRefresh() {
   const element = $('next-refresh');
   if (state.busy) {
-    element.textContent = 'Refreshing now…';
+    element.textContent = 'Checking for a new cache…';
     return;
   }
   if (!state.nextRefreshAt) {
-    element.textContent = 'Auto-refresh every 10 minutes';
+    element.textContent = 'Checks for a new cache every 10 minutes';
     return;
   }
   const remaining = Math.max(0, state.nextRefreshAt - state.now);
-  element.textContent = `Next auto-refresh in ${formatDuration(remaining / 60_000)}`;
+  element.textContent = `Next cache check in ${formatDuration(remaining / 60_000)}`;
 }
 
 function renderAll() {
@@ -307,7 +320,7 @@ function renderAll() {
 /* Refresh and interpretation                                         */
 /* ------------------------------------------------------------------ */
 
-function summarizeRefresh(sourceStates, result) {
+function summarizeRefresh(sourceStates, result, snapshot) {
   const counts = sourceStates.reduce(
     (accumulator, sourceState) => {
       accumulator[sourceState.status] = (accumulator[sourceState.status] ?? 0) + 1;
@@ -315,11 +328,20 @@ function summarizeRefresh(sourceStates, result) {
     },
     {},
   );
-  const parts = [`${sourceStates.length} sources checked`];
+  const answered = sourceStates.filter(
+    (sourceState) => sourceState.status === 'live' || sourceState.status === 'empty',
+  ).length;
+  const parts = [
+    `Hourly cache generated ${formatRelative(snapshot.generatedAt, Date.now())}`,
+    `${answered} of ${sourceStates.length} sources answered`,
+  ];
   for (const status of ['live', 'empty', 'cached', 'malformed', 'unavailable']) {
     if (counts[status]) parts.push(`${counts[status]} ${status}`);
   }
   if (result?.duplicates) parts.push(`${result.duplicates} duplicate${result.duplicates === 1 ? '' : 's'} removed`);
+  if (snapshot.staleHours > WORLD_CACHE_MAX_AGE_HOURS) {
+    parts.push('stale; GitHub Actions may be delayed or disabled');
+  }
   return `${formatClock(Date.now())} · ${parts.join(' · ')}.`;
 }
 
@@ -422,17 +444,35 @@ async function refresh({ auto = false } = {}) {
   state.busy = true;
   const button = $('refresh-button');
   button.disabled = true;
-  button.textContent = auto ? 'Checking quietly…' : 'Refreshing…';
-  setText('refresh-status', auto ? 'Checking sources in the background…' : 'Checking every source independently…');
+  button.textContent = auto ? 'Checking quietly…' : 'Loading cache…';
+  setText(
+    'refresh-status',
+    auto ? 'Checking for a new hourly cache…' : 'Loading the hourly world cache…',
+  );
   renderNextRefresh();
 
   try {
     const now = Date.now();
-    const loaders = createLoaders({
+    const snapshot = await loadWorldCache({
       fetchImpl: window.fetch.bind(window),
-      proxyBase: '',
+      url: WORLD_CACHE_URL,
       now,
     });
+    const loaders = snapshot.sources.map((source) => ({
+      id: source.sourceId,
+      label: source.label,
+      provider: source.provider,
+      homepage: source.homepage,
+      group: source.group,
+      async load() {
+        return {
+          status: source.status,
+          records: source.records,
+          error: source.error,
+          fetchedAt: source.fetchedAt,
+        };
+      },
+    }));
     const result = await runRefresh({ loaders, repository: state.repository, now });
     const records = await state.repository.listRecords();
     const sourceStates = buildSourceStates({
@@ -440,17 +480,25 @@ async function refresh({ auto = false } = {}) {
       records,
       previousStates: state.sourceStates,
       now,
-    });
+      attemptAt: snapshot.generatedAt,
+    }).map((sourceState) => ({
+      ...sourceState,
+      fromSnapshot: true,
+      cacheGeneratedAt: snapshot.generatedAt,
+    }));
 
     await state.repository.saveSourceStates(sourceStates);
     await state.repository.setMeta('lastRefreshAt', now);
+    await state.repository.setMeta('cacheGeneratedAt', snapshot.generatedAt);
     if (result.ingestError) toast(`Some data could not be saved: ${result.ingestError}`);
 
     state.sourceStates = sourceStates;
     state.records = records;
     state.lastRefreshAt = now;
+    state.cacheGeneratedAt = snapshot.generatedAt;
+    state.cacheStale = snapshot.staleHours > WORLD_CACHE_MAX_AGE_HOURS;
     state.now = Date.now();
-    state.refreshNote = summarizeRefresh(sourceStates, result);
+    state.refreshNote = summarizeRefresh(sourceStates, result, snapshot);
 
     const interpretation = await interpretPendingNews(state.now);
     state.interpretation = interpretation;
@@ -459,14 +507,14 @@ async function refresh({ auto = false } = {}) {
     await reloadSavedState();
     state.mood = computeMood({ reactions: state.reactions, now: state.now });
     state.activeKeys = activeReactionKeys(state.mood);
-    state.refreshNote = summarizeRefresh(sourceStates, result);
+    state.refreshNote = summarizeRefresh(sourceStates, result, snapshot);
   } catch (error) {
-    state.refreshNote = `Refresh failed: ${error.message}. Previously saved data is still shown.`;
-    toast('Refresh failed. Cached records are still available.');
+    state.refreshNote = `World cache unavailable: ${error.message}. Saved records and reactions are still shown.`;
+    toast('The hourly cache could not be loaded. Saved records are still available.');
   } finally {
     state.busy = false;
     button.disabled = false;
-    button.textContent = 'Refresh world';
+    button.textContent = 'Reload world cache';
     state.nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
     renderAll();
   }
@@ -477,10 +525,11 @@ async function refresh({ auto = false } = {}) {
 /* ------------------------------------------------------------------ */
 
 async function loadFromStore() {
-  const [records, sourceStates, lastRefreshAt, savedInterpretation] = await Promise.all([
+  const [records, sourceStates, lastRefreshAt, cacheGeneratedAt, savedInterpretation] = await Promise.all([
     state.repository.listRecords(),
     state.repository.listSourceStates(),
     state.repository.getMeta('lastRefreshAt'),
+    state.repository.getMeta('cacheGeneratedAt'),
     state.repository.getMeta('interpretation'),
   ]);
 
@@ -488,6 +537,10 @@ async function loadFromStore() {
   state.sourceStates = sourceStates;
   state.lastRefreshAt = lastRefreshAt ?? null;
   state.now = Date.now();
+  state.cacheGeneratedAt = cacheGeneratedAt ?? null;
+  state.cacheStale = cacheGeneratedAt
+    ? state.now - cacheGeneratedAt > WORLD_CACHE_MAX_AGE_HOURS * HOUR_MS
+    : false;
   await reloadSavedState();
   state.mood = computeMood({ reactions: state.reactions, now: state.now });
   state.activeKeys = activeReactionKeys(state.mood);

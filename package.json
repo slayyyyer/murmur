@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node proxy/server.js",
     "dev": "node proxy/server.js",
+    "cache": "node scripts/build-world-cache.js",
     "test": "node tests/run.js"
   }
 }

@@ -68,11 +68,11 @@
             <ul class="bubbles" id="bubbles" aria-label="Strongest current influences"></ul>
 
             <div class="stage-actions">
-              <button class="primary-button" id="refresh-button" type="button">Refresh world</button>
-              <span class="next-refresh" id="next-refresh">Auto-refresh every 10 minutes</span>
+              <button class="primary-button" id="refresh-button" type="button">Reload world cache</button>
+              <span class="next-refresh" id="next-refresh">Checks for a new cache every 10 minutes</span>
             </div>
             <p class="refresh-status" id="refresh-status" role="status" aria-live="polite">
-              Murmur has not checked its sources yet this session.
+              Murmur has not loaded the hourly world cache yet.
             </p>
           </div>
         </section>
@@ -111,7 +111,7 @@
           <div class="section-heading">
             <div>
               <h2 id="availability-heading">Source availability</h2>
-              <p>Every source is fetched independently. Failures keep their dated cache.</p>
+              <p>Fetched hourly by GitHub Actions. Failed sources keep their last dated cache.</p>
             </div>
             <span class="tiny-note" id="availability-note"></span>
           </div>
@@ -180,7 +180,8 @@
         <footer class="site-footer">
           <p>
             Murmur is a fiction with a clock. It does not feel anything, verify headlines, or understand the places it
-            reads about. Its mood is calculated in your browser from the sources below and fades on a fixed schedule.
+            reads about. Its mood is calculated in your browser from an hourly GitHub Actions snapshot and fades on a
+            fixed schedule.
           </p>
           <p class="fine-print">
             Charlotte weather and modeled air quality: Open-Meteo · News: BBC, Al Jazeera, NASA, The Guardian, Positive

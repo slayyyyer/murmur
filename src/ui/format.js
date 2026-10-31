@@ -42,11 +42,14 @@ export function sourceTone(status) {
 export function sourceStatusText(state, now = Date.now()) {
   if (!state) return 'Not checked yet';
   const records = `${state.recordCount ?? 0} record${state.recordCount === 1 ? '' : 's'}`;
+  const snapshot = state.fromSnapshot === true;
   switch (state.status) {
     case 'live':
-      return `Live · ${records}`;
+      return snapshot
+        ? `Hourly cache · ${records} · fetched ${state.lastSuccessAt ? formatRelative(state.lastSuccessAt, now) : 'at build time'}`
+        : `Live · ${records}`;
     case 'empty':
-      return 'Reachable · no current items';
+      return snapshot ? 'Hourly cache · no current items' : 'Reachable · no current items';
     case 'cached':
       return `Cached · last live ${state.lastSuccessAt ? formatRelative(state.lastSuccessAt, now) : 'unknown'}`;
     case 'malformed':

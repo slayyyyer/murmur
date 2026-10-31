@@ -64,12 +64,13 @@ export function wakingBubblesMarkup() {
     .join('');
 }
 
-export function moodTimeText({ mood, lastRefreshAt, now }) {
+export function moodTimeText({ mood, lastRefreshAt, cacheGeneratedAt = null, now }) {
   const active = mood?.active?.length ?? 0;
   const parts = [
     `Computed at ${formatClock(now)} Charlotte time`,
     `${active} active influence${active === 1 ? '' : 's'}`,
   ];
-  if (lastRefreshAt) parts.push(`sources checked ${formatRelative(lastRefreshAt, now)}`);
+  if (cacheGeneratedAt) parts.push(`hourly cache generated ${formatRelative(cacheGeneratedAt, now)}`);
+  else if (lastRefreshAt) parts.push(`cache loaded ${formatRelative(lastRefreshAt, now)}`);
   return parts.join(' · ');
 }

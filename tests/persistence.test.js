@@ -177,3 +177,28 @@ test('refresh creates no news reactions on its own', async () => {
   const reactions = await repository.listReactions();
   assert.equal(reactions.length, 0);
 });
+
+test('source state records the cache fetch time, not the browser load time', () => {
+  const fetchedAt = NOW - 2 * HOUR;
+  const states = buildSourceStates({
+    outcomes: [
+      {
+        sourceId: 'weather',
+        label: 'Charlotte weather',
+        provider: 'Open-Meteo',
+        homepage: 'https://open-meteo.com/',
+        group: 'weather',
+        status: 'live',
+        records: [],
+        error: null,
+        fetchedAt,
+      },
+    ],
+    records: [weatherRecord({ fetchedAt })],
+    now: NOW,
+    attemptAt: fetchedAt,
+  });
+
+  assert.equal(states[0].lastSuccessAt, fetchedAt);
+  assert.equal(states[0].lastAttemptAt, fetchedAt);
+});
