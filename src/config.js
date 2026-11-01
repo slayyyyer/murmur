@@ -14,12 +14,14 @@ export const LOCATION = Object.freeze({
 });
 
 export const BUDGETS = Object.freeze({
-  news: 0.6,
-  weather: 0.25,
+  news: 0.55,
+  weather: 0.2,
   air: 0.05,
-  wildlife: 0.05,
+  alerts: 0.075,
+  water: 0.04,
+  wildlife: 0.04,
   earthquake: 0.025,
-  eonet: 0.025,
+  eonet: 0.02,
 });
 
 export const NEWS_TOPICS = Object.freeze([
@@ -40,13 +42,15 @@ export const NEWS_TOPIC_LABELS = Object.fromEntries(NEWS_TOPICS.map((topic) => [
 export const NEWS_SLOTS_PER_TOPIC = 2;
 export const PUBLISHER_STORY_LIMIT = 6;
 
-/** Each of the 18 news slots carries an equal slice of the 60% news budget. */
+/** Each of the 18 news slots carries an equal slice of the 55% news budget. */
 export const NEWS_SLOT_WEIGHT = BUDGETS.news / (NEWS_TOPICS.length * NEWS_SLOTS_PER_TOPIC);
 
 export const WEIGHTS = Object.freeze({
   news: NEWS_SLOT_WEIGHT,
   weather: BUDGETS.weather,
   air: BUDGETS.air,
+  alerts: BUDGETS.alerts,
+  water: BUDGETS.water,
   wildlife: BUDGETS.wildlife,
   earthquake: BUDGETS.earthquake,
   eonet: BUDGETS.eonet,
@@ -56,6 +60,8 @@ export const DECAY = Object.freeze({
   news: { halfLifeHours: 6, maxAgeHours: 48 },
   weather: { halfLifeHours: 3, maxAgeHours: 6 },
   air: { halfLifeHours: 3, maxAgeHours: 6 },
+  alerts: { halfLifeHours: 3, maxAgeHours: 24 },
+  water: { halfLifeHours: 6, maxAgeHours: 24 },
   wildlife: { halfLifeHours: 24, maxAgeHours: 168 },
   earthquake: { halfLifeHours: 6, maxAgeHours: 24 },
   eonet: { halfLifeHours: 24, maxAgeHours: 168 },
@@ -69,6 +75,8 @@ export const GROUP_LABELS = Object.freeze({
   news: 'News',
   weather: 'Weather',
   air: 'Air quality',
+  alerts: 'Weather alerts',
+  water: 'River level',
   wildlife: 'Nearby wildlife',
   earthquake: 'Earthquakes',
   eonet: 'NASA natural events',
@@ -78,9 +86,19 @@ export const GROUP_LABELS_SHORT = Object.freeze({
   news: 'News',
   weather: 'Weather',
   air: 'Air',
+  alerts: 'Alerts',
+  water: 'River',
   wildlife: 'Wildlife',
   earthquake: 'Quakes',
   eonet: 'NASA events',
+});
+
+/** The nearest gauge with published flood categories, about 25 km west of Charlotte. */
+export const WATER_GAUGE = Object.freeze({
+  siteId: '02145000',
+  lid: 'LOWN7',
+  name: 'South Fork Catawba at Lowell',
+  homepage: 'https://water.noaa.gov/gauges/lown7',
 });
 
 export const PUBLISHERS = Object.freeze({
@@ -210,6 +228,20 @@ export const SOURCE_DEFS = Object.freeze([
     label: 'Charlotte air quality',
     provider: 'Open-Meteo air-quality API',
     homepage: 'https://open-meteo.com/en/docs/air-quality-api',
+  },
+  {
+    id: 'alerts',
+    group: 'alerts',
+    label: 'NWS weather alerts',
+    provider: 'National Weather Service',
+    homepage: 'https://www.weather.gov/',
+  },
+  {
+    id: 'water',
+    group: 'water',
+    label: WATER_GAUGE.name,
+    provider: 'NOAA National Water Prediction Service',
+    homepage: WATER_GAUGE.homepage,
   },
   ...Object.values(PUBLISHERS).map((publisher) => ({
     id: publisher.id,

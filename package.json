@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A small animated face that reacts to world news, Charlotte weather, and environmental observations.",
+  "description": "A small animated face that reacts to world news, Charlotte weather, official alerts, river level, and environmental observations.",
   "engines": {
     "node": ">=18.17"
   },

@@ -67,7 +67,7 @@ test('saved reactions survive a simulated restart with their original age', asyn
   const active = mood.active.find((item) => item.reaction.group === 'weather');
   assert.ok(active);
   assert.ok(
-    Math.abs(active.contribution - stored[0].intensity * 0.25 * 2 ** (-2 / 3)) < 1e-12,
+    Math.abs(active.contribution - stored[0].intensity * 0.2 * 2 ** (-2 / 3)) < 1e-12,
   );
 });
 

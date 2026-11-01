@@ -1,6 +1,6 @@
 # Murmur
 
-A small animated face in Charlotte, North Carolina that reacts to public weather, modeled air quality, world news, local news, earthquakes, nearby wildlife observations, and open natural events.
+A small animated face in Charlotte, North Carolina that reacts to public weather, official weather alerts, modeled air quality, a nearby river gauge, world news, local news, earthquakes, nearby wildlife observations, and open natural events.
 
 Murmur's mood is a **simulated emotional state**. It is a clock-driven calculation, not sentience, not a measurement of public opinion, and not a factual summary of the world. Every influence decays; nothing is refreshed into a stronger state by reloading.
 
@@ -79,7 +79,7 @@ npm test
 bun tests/run.js
 ```
 
-The suite has 56 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, model-output validation, and cache validation.
+The suite has 61 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, model-output validation, and cache validation.
 
 ---
 
@@ -159,7 +159,7 @@ Before anything reaches IndexedDB, `src/app/worldCache.js` checks the schema ver
 - **Charlotte weather and modeled air quality** — current observation, source link, observation time, and whether it is outside the six-hour mood window.
 - **Reload world cache** — manual cache re-check, with a ten-minute automatic check and a status line showing the cache generation time and source outcomes.
 - **Source availability** — one chip per source with hourly-cache/empty/malformed/unavailable state and a direct link.
-- **Explore the world** — expandable, filterable by nine news topics plus weather, air, earthquakes, wildlife, and NASA events. Distinguishes active reactions from recorded-but-not-governing inputs. Each record shows source, link, original date, update/retrieval dates, and status.
+- **Explore the world** — expandable, filterable by nine news topics plus weather, alerts, air, river level, earthquakes, wildlife, and NASA events. Distinguishes active reactions from recorded-but-not-governing inputs. Each record shows source, link, original date, update/retrieval dates, and status.
 - **Sources and mood** — expandable ledger of each emotion's strength, supporting records, per-group budgets, news slot allocation, publisher caps, source statuses, and the calculation rules.
 - **Expression preview** — five clearly fictional scenarios, fixed by hand. They never affect the live mood.
 
@@ -173,6 +173,8 @@ All times are displayed in Charlotte's time zone.
 | --- | --- | --- | --- |
 | Charlotte weather | Open-Meteo | `https://api.open-meteo.com/v1/forecast` | Action direct → cache |
 | Modeled air quality | Open-Meteo | `https://air-quality-api.open-meteo.com/v1/air-quality` | Action direct → cache |
+| Weather alerts | National Weather Service | `https://api.weather.gov/alerts/active?point=35.2271,-80.8431` | Action direct → cache |
+| River level | NOAA NWPS | `https://api.water.noaa.gov/nwps/v1/gauges/02145000` | Action direct → cache |
 | World news | BBC | `https://feeds.bbci.co.uk/news/...` | Action via relay → cache |
 | World news | Al Jazeera | `https://www.aljazeera.com/xml/rss/all.xml` | Action via relay → cache |
 | Science and space | NASA | `https://www.nasa.gov/feed/` | Action via relay → cache |
@@ -210,7 +212,7 @@ The relay runs inside the Actions runner and during local cache generation. The 
 
 ## Build-time news model (optional)
 
-News needs a model to become an emotional influence. Murmur runs that model in GitHub Actions while building the hourly cache, never in the browser. Without a key, or when the model fails, headlines are still collected, dated, linked, and browsable, but they do **not** affect the mood. Weather, air, earthquakes, wildlife, and EONET continue working because their rules are deterministic.
+News needs a model to become an emotional influence. Murmur runs that model in GitHub Actions while building the hourly cache, never in the browser. Without a key, or when the model fails, headlines are still collected, dated, linked, and browsable, but they do **not** affect the mood. Weather, alerts, air, river level, earthquakes, wildlife, and EONET continue working because their rules are deterministic.
 
 ### Setup
 
@@ -270,14 +272,16 @@ plus bookkeeping used for decay, selection, links, and explanation.
 
 | Source group | Maximum share |
 | --- | --- |
-| News | 60% |
-| Weather | 25% |
+| News | 55% |
+| Weather | 20% |
+| Weather alerts | 7.5% |
 | Air quality | 5% |
-| Nearby wildlife | 5% |
+| River level | 4% |
+| Nearby wildlife | 4% |
 | Earthquakes | 2.5% |
-| NASA natural events | 2.5% |
+| NASA natural events | 2% |
 
-News has **two slots per topic**. With nine topics that is eighteen slots, each worth `0.60 / 18 = 3.33%`. Slots are filled round-robin: slot one for every topic, then slot two. Within a topic, the second slot prefers a different publisher. One publisher may hold at most six active stories.
+News has **two slots per topic**. With nine topics that is eighteen slots, each worth `0.55 / 18 = 3.06%`. Slots are filled round-robin: slot one for every topic, then slot two. Within a topic, the second slot prefers a different publisher. One publisher may hold at most six active stories.
 
 Missing inputs leave their share unused. They never increase another source's weight.
 
@@ -289,7 +293,7 @@ contribution = intensity × slotWeight × 2^(-ageHours / halfLifeHours)
 
 The strongest **aggregate** emotion sets the face. Total the contributions by mood, pick the largest, and show **calm** when that score is below **0.18**.
 
-Weather, air, wildlife, earthquakes, and EONET each contribute at most once. Only the newest eligible wildlife observation, newest eligible NASA event, and strongest current earthquake (by magnitude) can influence the mood. Other records remain browsable in Explore.
+Weather, alerts, air, river level, wildlife, earthquakes, and EONET each contribute at most once. Only the strongest active alert, newest eligible river reading, newest eligible wildlife observation, newest eligible NASA event, and strongest current earthquake (by magnitude) can influence the mood. Other records remain browsable in Explore.
 
 ### Decay and expiry
 
@@ -297,7 +301,9 @@ Weather, air, wildlife, earthquakes, and EONET each contribute at most once. Onl
 | --- | --- | --- |
 | News | 6 hours | 48 hours after publication **and** 48 hours after first interpretation |
 | Weather | 3 hours | 6 hours after observation |
+| Weather alerts | 3 hours | 24 hours after issue **or** the alert's official expiry, whichever is sooner |
 | Air quality | 3 hours | 6 hours after observation |
+| River level | 6 hours | 24 hours after the gauge reading |
 | Earthquakes | 6 hours | 24 hours after origin time |
 | Wildlife | 24 hours | 7 days after observation |
 | NASA events | 24 hours | 7 days after latest observation |
@@ -305,6 +311,8 @@ Weather, air, wildlife, earthquakes, and EONET each contribute at most once. Onl
 News ages from its **first interpretation time**, so a late interpretation does not make an old article young. Publication age is still enforced separately.
 
 Measured inputs age from their own observation time, not from when they were fetched. NASA events use the latest geometry observation from EONET; the record also preserves the event's earliest known date for display.
+
+Weather alerts use the NWS issue time and also stop contributing when the official alert expires. River readings use the gauge's observation time and the published flood categories from NOAA NWPS.
 
 ### Persistence and idempotency
 
@@ -322,7 +330,9 @@ For repeated nature event IDs (iNaturalist observation IDs, EONET event IDs), th
 ### What each source contributes
 
 - **Weather** — deterministic WMO-code and temperature rules (clear and mild → happy; rain → sad; storms → confused; heat → mad; cold → sad; overcast → calm).
+- **Weather alerts** — official NWS watches, warnings, and advisories for Charlotte. Severity sets the intensity; heat and fire-weather alerts add frustration, air-quality and smoke alerts add sadness, and other hazards add uncertainty. No damage or danger beyond the listed area is assumed.
 - **Air quality** — deterministic US AQI bands, labeled as modeled.
+- **River level** — the South Fork Catawba at Lowell, about 25 km west of Charlotte, using NOAA NWPS observed stage and published action/minor/moderate/major flood categories. No local damage is assumed from the gauge alone.
 - **Wildlife** — a small positive note for the newest research-grade observation within roughly 50 km.
 - **Earthquakes** — modest concern for magnitudes 4.0+, with distance from Charlotte and the explicit statement that no local impact is assumed.
 - **NASA EONET** — modest concern for open wildfires, severe storms, and volcanoes, without assuming casualties, damage, or danger to Charlotte.
@@ -391,6 +401,8 @@ src/
   sources/
     http.js                Deadline and byte-bounded fetch helpers
     openMeteo.js           Weather and air quality adapters
+    alerts.js              Official NWS weather-alert adapter
+    water.js               NOAA NWPS river-gauge adapter
     news.js                Feed adapter, classification, per-publisher loaders
     usgs.js                Earthquake adapter
     inaturalist.js         Wildlife adapter with privacy stripping
@@ -448,7 +460,7 @@ If you add a feed, add it to `FEEDS` and add its origin/path prefix to the allow
 ## Honest limitations
 
 - The face is a fiction. It does not understand news, feel anything, or predict anything.
-- News reactions require the optional build-time model. Without a key, when the model fails, or when no reaction passes validation, the 60% news budget is simply unused, which makes the face much quieter by design.
+- News reactions require the optional build-time model. Without a key, when the model fails, or when no reaction passes validation, the 55% news budget is simply unused, which makes the face much quieter by design.
 - Environmental reactions are hand-written rules, not analysis.
 - Open-Meteo air quality is modeled, not measured by a local sensor.
 - EONET is filtered to fires, severe storms, and volcanoes; other categories are ignored.
@@ -456,7 +468,7 @@ If you add a feed, add it to `FEEDS` and add its origin/path prefix to the allow
 - No demo data is included or substituted. Empty and failed states are shown as such.
 - GitHub cron is best-effort and can be delayed. Scheduled workflows may be disabled after 60 days of repository inactivity; run the workflow manually to re-enable the schedule.
 - GitHub Pages serves assets with a ten-minute cache. The app accounts for this, but a newly deployed cache can take up to ten minutes to appear.
-- Weather and air expire after six hours, so a badly delayed cache naturally removes them from the mood.
+- Weather, alerts, and air expire on their own shorter windows, and the gauge reading expires after a day, so a badly delayed cache naturally removes them from the mood.
 - Feed summaries are publisher-provided and may lag or change. Murmur never fetches article pages.
 - The relay is for local development and CI. It has no authentication or rate limiting; do not expose it to the public internet.
 - Times use `America/New_York`, which includes daylight saving changes.

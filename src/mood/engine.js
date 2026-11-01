@@ -12,7 +12,7 @@ import {
 } from '../config.js';
 import { contribution, HOUR_MS } from '../lib/time.js';
 
-export const GROUP_ORDER = ['news', 'weather', 'air', 'wildlife', 'earthquake', 'eonet'];
+export const GROUP_ORDER = ['news', 'weather', 'alerts', 'air', 'water', 'wildlife', 'earthquake', 'eonet'];
 const MOOD_ORDER = Object.fromEntries(MOODS.map((mood, index) => [mood, index]));
 
 export function publisherOf(reaction) {
@@ -45,6 +45,10 @@ export function eligibility(reaction, now) {
   const intensity = Number(reaction.intensity);
   if (!Number.isFinite(intensity) || intensity < 0 || intensity > 1) {
     return { eligible: false, reason: 'Invalid intensity.' };
+  }
+
+  if (Number.isFinite(Number(reaction.expiresAt)) && now > Number(reaction.expiresAt)) {
+    return { eligible: false, reason: 'The official alert has expired.' };
   }
 
   const age = reactionAgeHours(reaction, now);
@@ -146,6 +150,17 @@ function strongestEarthquake(reactions) {
   )[0] ?? null;
 }
 
+const ALERT_SEVERITY_RANK = { Extreme: 4, Severe: 3, Moderate: 2, Minor: 1, Unknown: 0 };
+
+function strongestAlert(reactions) {
+  return [...reactions].sort(
+    (a, b) =>
+      (ALERT_SEVERITY_RANK[b.severity] ?? 0) - (ALERT_SEVERITY_RANK[a.severity] ?? 0) ||
+      Number(b.observedAt ?? b.originalAt ?? 0) - Number(a.observedAt ?? a.originalAt ?? 0) ||
+      String(a.key).localeCompare(String(b.key)),
+  )[0] ?? null;
+}
+
 /**
  * Choose the reactions that may influence the face right now. Only one
  * weather/air/wildlife/eonet reaction and one earthquake can be active, so
@@ -176,7 +191,9 @@ export function selectActive(reactions, now = Date.now()) {
 
   const singles = [
     ['weather', newestReaction],
+    ['alerts', strongestAlert],
     ['air', newestReaction],
+    ['water', newestReaction],
     ['wildlife', newestReaction],
     ['earthquake', strongestEarthquake],
     ['eonet', newestReaction],
@@ -220,8 +237,12 @@ export function influencePhrase(reaction) {
       return `${reaction.publisherLabel ?? 'News'} coverage`;
     case 'weather':
       return 'Charlotte weather';
+    case 'alerts':
+      return 'an official weather alert';
     case 'air':
       return 'Charlotte air quality';
+    case 'water':
+      return 'the South Fork Catawba gauge';
     case 'wildlife':
       return 'a nearby wildlife observation';
     case 'earthquake':

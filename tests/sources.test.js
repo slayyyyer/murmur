@@ -7,6 +7,8 @@ import { normalizeAir, normalizeWeather, parseLocalTimestamp } from '../src/sour
 import { normalizeEarthquakes } from '../src/sources/usgs.js';
 import { normalizeWildlife } from '../src/sources/inaturalist.js';
 import { normalizeEonet } from '../src/sources/eonet.js';
+import { normalizeAlerts } from '../src/sources/alerts.js';
+import { normalizeWater } from '../src/sources/water.js';
 import { dedupeRecords } from '../src/lib/dedupe.js';
 import { HOUR, NOW } from './fixtures.js';
 
@@ -253,6 +255,100 @@ test('EONET rejects a broken envelope but treats a filtered list as valid empty'
   assert.throws(() => normalizeEonet({}, { now: NOW }), /events list/i);
   const filtered = normalizeEonet({ events: [] }, { now: NOW, fetchedAt: NOW });
   assert.equal(filtered.records.length, 0);
+});
+
+test('NWS alerts keep active official alerts and skip expired or cancelled entries', () => {
+  const now = Date.now();
+  const sent = new Date(now - HOUR).toISOString();
+  const expires = new Date(now + 6 * HOUR).toISOString();
+  const payload = {
+    features: [
+      {
+        id: 'https://api.weather.gov/alerts/urn:oid:1',
+        properties: {
+          id: 'urn:oid:1',
+          '@id': 'https://api.weather.gov/alerts/urn:oid:1',
+          event: 'Heat Advisory',
+          severity: 'Moderate',
+          urgency: 'Expected',
+          certainty: 'Likely',
+          areaDesc: 'Mecklenburg',
+          senderName: 'NWS Greenville-Spartanburg',
+          headline: 'Heat advisory in effect',
+          sent,
+          onset: sent,
+          expires,
+          status: 'Actual',
+          messageType: 'Alert',
+        },
+      },
+      {
+        id: 'https://api.weather.gov/alerts/urn:oid:2',
+        properties: {
+          id: 'urn:oid:2',
+          event: 'Flood Warning',
+          severity: 'Severe',
+          sent,
+          expires: new Date(now - HOUR).toISOString(),
+          status: 'Actual',
+          messageType: 'Alert',
+        },
+      },
+      {
+        id: 'https://api.weather.gov/alerts/urn:oid:3',
+        properties: {
+          id: 'urn:oid:3',
+          event: 'Tornado Warning',
+          severity: 'Extreme',
+          sent,
+          expires,
+          status: 'Actual',
+          messageType: 'Cancel',
+        },
+      },
+    ],
+  };
+
+  const { records, skipped } = normalizeAlerts(payload, { now, fetchedAt: now });
+  assert.equal(records.length, 1);
+  assert.equal(skipped, 2);
+  assert.equal(records[0].key, 'alert:urn:oid:1');
+  assert.equal(records[0].data.severity, 'Moderate');
+  assert.equal(records[0].data.expiresAt, Date.parse(expires));
+  assert.throws(() => normalizeAlerts({}, { now }), /feature list/i);
+});
+
+test('river gauge keeps the observed stage and published flood categories', () => {
+  const now = Date.now();
+  const observedAt = new Date(now - HOUR).toISOString();
+  const payload = {
+    lid: 'LOWN7',
+    name: 'SF Catawba River below George Poston Park, 1 N Lowell',
+    latitude: 35.285278,
+    longitude: -81.101111,
+    status: {
+      observed: { primary: 10.4, primaryUnit: 'ft', floodCategory: 'minor', validTime: observedAt },
+    },
+    flood: {
+      categories: {
+        action: { stage: 9 },
+        minor: { stage: 10 },
+        moderate: { stage: 13 },
+        major: { stage: 15.5 },
+      },
+    },
+  };
+
+  const record = normalizeWater(payload, { now, fetchedAt: now });
+  assert.equal(record.group, 'water');
+  assert.equal(record.data.stageFt, 10.4);
+  assert.equal(record.data.category, 'minor');
+  assert.equal(record.data.minorStageFt, 10);
+  assert.equal(record.data.distanceKm % 5, 0);
+  assert.match(record.summary, /minor 10\.0 ft/);
+
+  const invalid = { status: { observed: { primary: null, validTime: observedAt } } };
+  assert.throws(() => normalizeWater(invalid, { now }), /stage/i);
 });
 
 test('RSS parser handles CDATA, entities, and channel items', () => {

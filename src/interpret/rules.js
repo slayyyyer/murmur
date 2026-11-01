@@ -184,9 +184,78 @@ export function eonetRule(record) {
   };
 }
 
+export function alertRule(record) {
+  const data = record?.data ?? {};
+  const event = data.event;
+  if (!event) return null;
+
+  const severity = ['Extreme', 'Severe', 'Moderate', 'Minor'].includes(data.severity)
+    ? data.severity
+    : 'Unknown';
+  const intensity = { Extreme: 0.85, Severe: 0.7, Moderate: 0.5, Minor: 0.3, Unknown: 0.25 }[severity];
+  const mood = /heat|fire weather|red flag/i.test(event)
+    ? 'mad'
+    : /air quality|smoke/i.test(event)
+      ? 'sad'
+      : 'confused';
+  const area = data.areaDesc && data.areaDesc !== 'the alert area' ? ` for ${data.areaDesc}` : ' for the Charlotte area';
+
+  return {
+    mood,
+    intensity,
+    text: `The National Weather Service has an active ${event}${area}. This is an official alert; no damage or danger beyond the listed area is assumed.`,
+  };
+}
+
+export function waterRule(record) {
+  const data = record?.data ?? {};
+  const stage = Number(data.stageFt);
+  if (!Number.isFinite(stage)) return null;
+
+  const place = data.name || 'the South Fork Catawba at Lowell';
+  const stageText = `${stage.toFixed(2)} ft`;
+  const action = Number(data.actionStageFt);
+  const actionText = Number.isFinite(action) ? `, below its ${action.toFixed(1)} ft action stage` : '';
+
+  switch (data.category) {
+    case 'action':
+      return {
+        mood: 'confused',
+        intensity: 0.35,
+        text: `${place} is at ${stageText}, at its action stage. The river is running high; no local damage is assumed.`,
+      };
+    case 'minor':
+      return {
+        mood: 'confused',
+        intensity: 0.55,
+        text: `${place} is at ${stageText}, in minor flooding at the gauge. This is a river reading, not a claim about damage elsewhere.`,
+      };
+    case 'moderate':
+      return {
+        mood: 'sad',
+        intensity: 0.7,
+        text: `${place} is at ${stageText}, in moderate flooding at the gauge. The high water is a heavy local note; no broader impact is assumed.`,
+      };
+    case 'major':
+      return {
+        mood: 'sad',
+        intensity: 0.85,
+        text: `${place} is at ${stageText}, in major flooding at the gauge. This is a serious reading, not a claim about damage beyond the gauge.`,
+      };
+    default:
+      return {
+        mood: 'calm',
+        intensity: 0.15,
+        text: `${place} is at ${stageText}${actionText}. The river is quiet at the gauge today.`,
+      };
+  }
+}
+
 export const MEASURED_RULES = Object.freeze({
   weather: weatherRule,
   air: airRule,
+  alerts: alertRule,
+  water: waterRule,
   wildlife: wildlifeRule,
   earthquake: earthquakeRule,
   eonet: eonetRule,
