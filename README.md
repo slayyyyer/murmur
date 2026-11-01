@@ -6,6 +6,11 @@ Murmur's mood is a **simulated emotional state**. It is a clock-driven calculati
 
 Plain HTML, CSS, and JavaScript ES modules. No framework, no runtime dependencies, no Python, and no server in production.
 
+## Documentation
+
+- [Technical paper: how Murmur works](docs/murmur-paper.md) — architecture, hourly build system, cache validation, browser runtime, and the emotion model.
+- [Editable diagram sources](docs/diagrams/) — system context, build pipeline, browser runtime, mood model, budgets, and persistence.
+
 ---
 
 ## How the data reaches the browser
@@ -439,6 +444,7 @@ proxy/
 .github/workflows/
   pages.yml                Hourly cache, tests, artifact, Pages deployment
 tests/                     Decay, expiry, persistence, adapters, cache, model output
+docs/                      Technical paper and editable diagram sources
 data/world-cache.json      Generated locally or in CI; gitignored
 ```
 

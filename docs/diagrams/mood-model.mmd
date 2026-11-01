@@ -1,0 +1,18 @@
+flowchart TD
+  R["Stored reactions"] --> E{"Eligibility:<br/>mood, intensity, official expiry,<br/>max age, news publication age"}
+  E -->|"reject"| X["Ignored with an explicit reason"]
+  E -->|"accept"| G["Partition by source group"]
+
+  G --> N["News: 2 slots x 9 topics<br/>round-robin, publisher cap 6"]
+  G --> S["Singles: newest weather, air, water,<br/>wildlife and EONET; strongest alert<br/>and strongest earthquake"]
+
+  N --> W["News slot weight<br/>0.55 / 18"]
+  S --> W2["Group budget weights"]
+  W --> D["contribution = intensity x weight x 2^(-age / half-life)"]
+  W2 --> D
+  D --> A["Sum contributions by mood"]
+  A --> T{"Top score < 0.18?"}
+  T -->|"yes"| C["Calm fallback"]
+  T -->|"no"| M["Winning mood<br/>happy / hopeful / sad / uneasy /<br/>mad (shown as Frustrated) / confused"]
+  C --> F["Face, bubbles and calculation ledger"]
+  M --> F

@@ -1,0 +1,34 @@
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant App as Browser app
+  participant IDB as IndexedDB
+  participant Pages as GitHub Pages
+  participant Cache as world-cache.json
+
+  U->>App: open the page
+  App->>IDB: load observations, reactions, sourceStates, meta
+  App->>App: computeMood(now)
+  App-->>U: paint face, conditions, bubbles and ledger
+
+  loop every 30 seconds
+    App->>App: computeMood(now) and decay
+  end
+
+  loop every 10 minutes, manual reload, or foreground return
+    App->>Pages: GET world-cache.json?v=10-minute bucket
+    Pages-->>Cache: same-origin snapshot
+    Cache-->>App: schema 2 JSON
+    App->>App: validate envelope, records and reactions
+    App->>App: runRefresh with virtual loaders
+    App->>IDB: idempotent ingest and measured reactions
+    App->>IDB: save news reactions with original interpretedAt
+    App->>IDB: save source states and cache metadata
+    App->>App: computeMood(now)
+    App-->>U: render updated state
+  end
+
+  opt cache request or validation fails
+    App->>IDB: keep saved records and reactions
+    App-->>U: show failure status
+  end

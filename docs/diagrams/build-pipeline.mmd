@@ -1,0 +1,25 @@
+flowchart TD
+  A["Cron 17 * * * *<br/>push to main<br/>manual dispatch"] --> B["Checkout + Node 20"]
+  B --> C["npm test"]
+  C --> D["Start relay<br/>poll /healthz"]
+  D --> E["build-world-cache.js"]
+  E --> F["13 loaders run in parallel"]
+  F --> G["Normalize, validate, dedupe<br/>record keys"]
+  G --> H["prepareBuild"]
+  H --> I{"Previous cache<br/>valid?"}
+  I -->|"yes"| J["Retain failing-source records<br/>within decay windows"]
+  I -->|"no"| K["Current records only"]
+  J --> L["Select carried reactions<br/>and pending headlines"]
+  K --> L
+  L --> M{"Model configured<br/>and pending news?"}
+  M -->|"yes"| N["Interpret batches of 8<br/>keep partial successes"]
+  M -->|"no"| O["Skip model call"]
+  N --> P["composeSnapshot<br/>schema 2"]
+  O --> P
+  P --> Q{"At least one<br/>live source?"}
+  Q -->|"no"| R["Exit non-zero<br/>keep previous Pages deployment"]
+  Q -->|"yes"| S{"Cache <= 4 MiB?"}
+  S -->|"no"| R
+  S -->|"yes"| T["Write data/world-cache.json"]
+  T --> U["Assemble dist + .nojekyll"]
+  U --> V["Upload artifact and deploy Pages"]

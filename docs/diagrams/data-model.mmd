@@ -1,0 +1,35 @@
+erDiagram
+  OBSERVATION {
+    string key PK
+    string group
+    string sourceId
+    string title
+    number originalAt
+    number observedAt
+    number fetchedAt
+    json data
+  }
+
+  REACTION {
+    string key PK
+    string recordKey FK
+    string mood
+    number intensity
+    number firstInterpretedAt
+    number observedAt
+  }
+
+  SOURCE_STATE {
+    string sourceId PK
+    string status
+    number lastAttemptAt
+    number lastSuccessAt
+  }
+
+  META {
+    string key PK
+    json value
+  }
+
+  OBSERVATION ||--o| REACTION : "may produce"
+  SOURCE_STATE ||--o{ OBSERVATION : "describes source"
