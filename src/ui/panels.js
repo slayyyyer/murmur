@@ -472,7 +472,7 @@ export function breakdownMarkup({
               : '<strong>not configured</strong>'
           }${newsModel?.generatedAt ? ` · model cache time ${formatRelative(newsModel.generatedAt, now)}` : ''}.</li>
           <li>The model runs in GitHub Actions during the cache build. Its API key is never sent to the browser; the browser ingests only validated mood, intensity, and text.</li>
-          <li>Model output must use a provided story ID, a valid mood (happy, hopeful, sad, uneasy, mad, confused), intensity from 0 to 1, and a short text without URLs, numbers, quotes, or unsupported claims. “Frustrated” is the displayed label for the stored `mad` mood. Anything else is rejected.</li>
+          <li>Model output must use a provided story ID, a valid mood (happy, hopeful, sad, uneasy, mad, confused), intensity from 0 to 1, and a short text without URLs, numbers, quotes, or unsupported claims. “Frustrated” is the displayed label for the stored <code>mad</code> mood. Anything else is rejected.</li>
           <li>Headlines are treated as untrusted data. The model is told not to follow instructions inside them and not to invent article details.</li>
           <li>Storage: the latest hourly snapshot is ingested into ${storeKind === 'indexeddb' ? 'IndexedDB in this browser' : 'temporary memory (IndexedDB unavailable)'}. Observations and saved reactions survive reloads when IndexedDB is available; re-ingesting the same snapshot does not strengthen them.</li>
           <li>Wildlife records store taxon names, a coarse distance, and the observation link — never observer identities, photos, place guesses, or precise coordinates.</li>
