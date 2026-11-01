@@ -18,7 +18,8 @@ export function topicLabel(topic) {
 
 export function kindLabel(group) {
   if (group === 'news') return { label: 'News', kind: 'news' };
-  if (group === 'weather' || group === 'air' || group === 'earthquake') {
+  if (group === 'alerts') return { label: 'Alert', kind: 'measurement' };
+  if (group === 'weather' || group === 'air' || group === 'water' || group === 'earthquake') {
     return { label: 'Measurement', kind: 'measurement' };
   }
   return { label: 'Observation', kind: 'observation' };
@@ -82,6 +83,15 @@ export function dateSummary(record) {
       break;
     case 'earthquake':
       out.push(`Origin ${formatDateTime(record.originalAt)}`);
+      break;
+    case 'alerts':
+      out.push(`Issued ${formatDateTime(record.originalAt)}`);
+      if (Number.isFinite(Number(record.data?.expiresAt))) {
+        out.push(`Expires ${formatDateTime(record.data.expiresAt)}`);
+      }
+      break;
+    case 'water':
+      out.push(`Gauge observed ${formatDateTime(record.observedAt ?? record.originalAt)}`);
       break;
     case 'wildlife':
       out.push(

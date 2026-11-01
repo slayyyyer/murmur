@@ -28,7 +28,9 @@ export const EXPLORE_FILTERS = Object.freeze([
   { id: 'all', label: 'All' },
   ...NEWS_TOPICS.map((topic) => ({ id: `topic:${topic.id}`, label: topic.label })),
   { id: 'weather', label: 'Weather' },
+  { id: 'alerts', label: 'Alerts' },
   { id: 'air', label: 'Air' },
+  { id: 'water', label: 'River' },
   { id: 'earthquake', label: 'Earthquakes' },
   { id: 'wildlife', label: 'Wildlife' },
   { id: 'eonet', label: 'NASA events' },
@@ -298,7 +300,7 @@ function newsModelNotice(newsModel) {
   if (newsModel.configured) {
     return `<div class="notice" data-tone="warn"><strong>The news model ran but returned no usable reactions.</strong> The hourly build still deployed the measured sources; news stays browsable without affecting the mood.</div>`;
   }
-  return `<div class="notice"><strong>News mood is not generated.</strong> No model key was configured for the hourly cache, so headlines are collected and browsable but do not affect the mood. Weather, air quality, wildlife, earthquakes, and NASA events keep working.</div>`;
+  return `<div class="notice"><strong>News mood is not generated.</strong> No model key was configured for the hourly cache, so headlines are collected and browsable but do not affect the mood. Weather, alerts, air quality, river level, wildlife, earthquakes, and NASA events keep working.</div>`;
 }
 
 function emotionRows(mood) {
@@ -417,14 +419,17 @@ function methodList() {
       NEWS_SLOT_WEIGHT,
       1,
     )}. A publisher may hold at most ${PUBLISHER_STORY_LIMIT} active stories.</li>
-    <li>Weather ${formatPercent(BUDGETS.weather)}, air quality ${formatPercent(BUDGETS.air)}, wildlife ${formatPercent(
-      BUDGETS.wildlife,
-    )}, earthquakes ${formatPercent(BUDGETS.earthquake, 1)}, NASA events ${formatPercent(BUDGETS.eonet, 1)}. Unused shares are never redistributed.</li>
+    <li>Weather ${formatPercent(BUDGETS.weather)}, weather alerts ${formatPercent(BUDGETS.alerts, 1)}, air quality ${formatPercent(
+      BUDGETS.air,
+    )}, river level ${formatPercent(BUDGETS.water)}, wildlife ${formatPercent(BUDGETS.wildlife)}, earthquakes ${formatPercent(
+      BUDGETS.earthquake,
+      1,
+    )}, NASA events ${formatPercent(BUDGETS.eonet, 1)}. Unused shares are never redistributed.</li>
     <li>News decays from its first interpretation and is also expired 48 hours after publication. Other inputs decay from their own observation time.</li>
-    <li>Weather and air: ${DECAY.weather.halfLifeHours}-hour half-life, ${DECAY.weather.maxAgeHours}-hour expiry. Earthquakes: ${DECAY.earthquake.halfLifeHours}-hour half-life, ${DECAY.earthquake.maxAgeHours}-hour expiry. Wildlife and NASA events: ${DECAY.wildlife.halfLifeHours}-hour half-life, 7-day expiry.</li>
-    <li>Only the newest eligible wildlife observation, newest eligible NASA event, and strongest current earthquake can contribute. Older records stay browsable.</li>
+    <li>Weather: ${DECAY.weather.halfLifeHours}-hour half-life, ${DECAY.weather.maxAgeHours}-hour expiry. Alerts: ${DECAY.alerts.halfLifeHours}-hour half-life, ${DECAY.alerts.maxAgeHours}-hour expiry or the official expiry, whichever is sooner. Air: ${DECAY.air.halfLifeHours}-hour half-life, ${DECAY.air.maxAgeHours}-hour expiry. River: ${DECAY.water.halfLifeHours}-hour half-life, ${DECAY.water.maxAgeHours}-hour expiry. Earthquakes: ${DECAY.earthquake.halfLifeHours}-hour half-life, ${DECAY.earthquake.maxAgeHours}-hour expiry. Wildlife and NASA events: ${DECAY.wildlife.halfLifeHours}-hour half-life, 7-day expiry.</li>
+    <li>Only the newest eligible wildlife observation, newest eligible NASA event, strongest current earthquake, strongest active alert, and newest river reading can contribute. Older records stay browsable.</li>
     <li>Reactions are saved once. Reloading, polling, or seeing the same evidence again never resets its age or increases its strength. Repeat nature IDs keep their earliest known original date.</li>
-    <li>Weather, air, wildlife, earthquakes, and NASA listings use transparent local rules. News is interpreted during the hourly build by an external model; without a model key, news is browsable but never invents a reaction.</li>
+    <li>Weather, alerts, air, river level, wildlife, earthquakes, and NASA listings use transparent local rules. News is interpreted during the hourly build by an external model; without a model key, news is browsable but never invents a reaction.</li>
   </ul>`;
 }
 
@@ -452,7 +457,7 @@ export function breakdownMarkup({
       </section>
       <section class="breakdown-block" aria-labelledby="slots-heading">
         <h3 id="slots-heading">News slots</h3>
-        <p>Two active stories per topic, evenly sharing the 60% news budget.</p>
+        <p>Two active stories per topic, evenly sharing the ${formatPercent(BUDGETS.news)} news budget.</p>
         ${slotGrid(mood)}
         <h4 class="minor-heading">Publisher limit</h4>
         ${publisherList(mood)}

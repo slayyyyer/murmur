@@ -34,6 +34,8 @@ export function createReaction(record, interpretation, { now = Date.now() } = {}
     observedAt: Number.isFinite(Number(record.observedAt)) ? Number(record.observedAt) : record.originalAt,
     originalAt: record.originalAt,
     magnitude: Number.isFinite(Number(record.data?.magnitude)) ? Number(record.data.magnitude) : undefined,
+    severity: typeof record.data?.severity === 'string' ? record.data.severity : undefined,
+    expiresAt: Number.isFinite(Number(record.data?.expiresAt)) ? Number(record.data.expiresAt) : undefined,
     title: record.title,
     url: record.url,
     dateOnly: Boolean(record.dateOnly),

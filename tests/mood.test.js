@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from './harness.js';
 import {
+  BUDGETS,
   CALM_THRESHOLD,
   NEWS_SLOT_WEIGHT,
   NEWS_TOPIC_IDS,
@@ -18,9 +19,10 @@ test('contribution follows intensity × weight × 2^(-age / half-life)', () => {
   assert.ok(Math.abs(contribution({ intensity: 0.5, weight: 0.25, ageHours: 3, halfLifeHours: 3 }) - 0.0625) < 1e-12);
 });
 
-test('news uses eighteen equal slots worth 60%', () => {
+test('news uses eighteen equal slots worth 55%', () => {
   assert.equal(NEWS_TOPICS.length * 2, 18);
-  assert.ok(Math.abs(NEWS_SLOT_WEIGHT - 0.6 / 18) < 1e-12);
+  assert.ok(Math.abs(NEWS_SLOT_WEIGHT - 0.55 / 18) < 1e-12);
+  assert.ok(Math.abs(Object.values(BUDGETS).reduce((total, value) => total + value, 0) - 1) < 1e-12);
 });
 
 test('maximum inputs can add up to exactly 1.000, never more', () => {
@@ -37,12 +39,12 @@ test('maximum inputs can add up to exactly 1.000, never more', () => {
     }
   });
 
-  for (const group of ['weather', 'air', 'wildlife', 'earthquake', 'eonet']) {
+  for (const group of ['weather', 'alerts', 'air', 'water', 'wildlife', 'earthquake', 'eonet']) {
     reactions.push(measuredReaction({ key: `${group}-one`, group, intensity: 1 }));
   }
 
   const mood = computeMood({ reactions, now: NOW });
-  assert.equal(mood.active.length, 23);
+  assert.equal(mood.active.length, 25);
   assert.ok(mood.totalContribution <= 1.0000001, `total was ${mood.totalContribution}`);
   assert.ok(mood.totalContribution > 0.9999, `total was ${mood.totalContribution}`);
   assert.equal(mood.byMood.happy.score > 0.999, true);
@@ -57,9 +59,9 @@ test('missing inputs leave their budget unused instead of redistributing', () =>
   const weather = mood.groups.find((group) => group.group === 'weather');
   assert.equal(mood.active.length, 1);
   assert.equal(news.used, 0);
-  assert.equal(news.budget, 0.6);
-  assert.equal(weather.used, 0.25);
-  assert.equal(mood.score, 0.25);
+  assert.equal(news.budget, 0.55);
+  assert.equal(weather.used, 0.2);
+  assert.equal(mood.score, 0.2);
 });
 
 test('a publisher cannot hold more than six active news stories', () => {
@@ -125,7 +127,7 @@ test('news is expired by both interpretation age and publication age', () => {
   assert.equal(eligibility(stillFresh, NOW).eligible, true);
 });
 
-test('weather, air, quake, wildlife and EONET expiry windows are enforced', () => {
+test('weather, alerts, air, water, quake, wildlife and EONET expiry windows are enforced', () => {
   assert.equal(
     eligibility(measuredReaction({ group: 'weather', observedAt: NOW - 6 * HOUR - 1 }), NOW).eligible,
     false,
@@ -147,6 +149,17 @@ test('weather, air, quake, wildlife and EONET expiry windows are enforced', () =
     eligibility(measuredReaction({ group: 'eonet', observedAt: NOW - 6 * 24 * HOUR }), NOW).eligible,
     true,
   );
+  assert.equal(
+    eligibility(measuredReaction({ group: 'water', observedAt: NOW - 25 * HOUR }), NOW).eligible,
+    false,
+  );
+  const expiredAlert = measuredReaction({
+    group: 'alerts',
+    observedAt: NOW - HOUR,
+    expiresAt: NOW - 1,
+  });
+  assert.equal(eligibility(expiredAlert, NOW).eligible, false);
+  assert.match(eligibility(expiredAlert, NOW).reason, /expired/);
 });
 
 test('strongest earthquake and newest wildlife are the only active singles', () => {
@@ -165,7 +178,25 @@ test('strongest earthquake and newest wildlife are the only active singles', () 
   assert.equal(quakes[0].reaction.magnitude, 6.7);
   assert.equal(wildlife.length, 1);
   assert.equal(wildlife[0].reaction.key, 'reaction:wildlife-new');
-  assert.ok(Math.abs(wildlife[0].contribution - 0.5 * 0.05 * 2 ** (-1 / 24)) < 1e-12);
+  assert.ok(Math.abs(wildlife[0].contribution - 0.5 * 0.04 * 2 ** (-1 / 24)) < 1e-12);
+});
+
+test('the strongest active alert and newest river reading are the only singles', () => {
+  const reactions = [
+    measuredReaction({ key: 'alert-minor', group: 'alerts', severity: 'Minor', observedAt: NOW - 30 * 60_000 }),
+    measuredReaction({ key: 'alert-severe', group: 'alerts', severity: 'Severe', observedAt: NOW - 2 * HOUR }),
+    measuredReaction({ key: 'water-old', group: 'water', observedAt: NOW - 2 * HOUR }),
+    measuredReaction({ key: 'water-new', group: 'water', observedAt: NOW - HOUR }),
+  ];
+
+  const mood = computeMood({ reactions, now: NOW });
+  const alerts = mood.active.filter((item) => item.reaction.group === 'alerts');
+  const water = mood.active.filter((item) => item.reaction.group === 'water');
+
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].reaction.severity, 'Severe');
+  assert.equal(water.length, 1);
+  assert.equal(water[0].reaction.key, 'reaction:water-new');
 });
 
 test('calm appears below 0.18 and the strongest emotion otherwise', () => {
@@ -177,7 +208,7 @@ test('calm appears below 0.18 and the strongest emotion otherwise', () => {
   assert.ok(quiet.score < CALM_THRESHOLD);
 
   const brighter = computeMood({
-    reactions: [measuredReaction({ key: 'bright-weather', group: 'weather', intensity: 0.8 })],
+    reactions: [measuredReaction({ key: 'bright-weather', group: 'weather', intensity: 0.95 })],
     now: NOW,
   });
   assert.equal(brighter.mood, 'happy');

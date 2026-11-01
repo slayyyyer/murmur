@@ -7,7 +7,7 @@ import {
 } from '../src/ai/newsInterpretation.js';
 import { interpretNewsWithModel } from '../src/ai/buildNewsModel.js';
 import { measuredReaction } from '../src/interpret/reactions.js';
-import { earthquakeRule, eonetRule, weatherRule, wildlifeRule } from '../src/interpret/rules.js';
+import { alertRule, earthquakeRule, eonetRule, waterRule, weatherRule, wildlifeRule } from '../src/interpret/rules.js';
 import { HOUR, NOW, weatherRecord } from './fixtures.js';
 
 test('valid model output tied to a provided story is accepted', () => {
@@ -198,6 +198,32 @@ test('NASA event text does not assert damage or danger to Charlotte', () => {
   });
   assert.equal(rule.mood, 'confused');
   assert.match(rule.text, /does not establish damage or danger to Charlotte/);
+});
+
+test('weather alerts use official severity and do not claim damage', () => {
+  const rule = alertRule({ data: { event: 'Flood Warning', severity: 'Severe', areaDesc: 'Mecklenburg' } });
+  assert.equal(rule.mood, 'confused');
+  assert.equal(rule.intensity, 0.7);
+  assert.match(rule.text, /National Weather Service/);
+  assert.match(rule.text, /no damage or danger/i);
+
+  assert.equal(alertRule({ data: { event: 'Heat Advisory', severity: 'Moderate' } }).mood, 'mad');
+  assert.equal(alertRule({ data: { event: 'Air Quality Alert', severity: 'Moderate' } }).mood, 'sad');
+});
+
+test('river rules move from quiet to flooding without inventing local damage', () => {
+  const quiet = waterRule({ data: { stageFt: 2.2, actionStageFt: 9, category: 'no_flooding' } });
+  assert.equal(quiet.mood, 'calm');
+  assert.match(quiet.text, /2\.20 ft/);
+  assert.match(quiet.text, /quiet/);
+
+  const minor = waterRule({ data: { stageFt: 10.4, category: 'minor' } });
+  assert.equal(minor.mood, 'confused');
+  assert.match(minor.text, /not a claim about damage/);
+
+  const major = waterRule({ data: { stageFt: 16, category: 'major' } });
+  assert.equal(major.mood, 'sad');
+  assert.match(major.text, /not a claim about damage beyond the gauge/);
 });
 
 test('measured reactions use the required public shape plus bookkeeping fields', () => {

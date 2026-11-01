@@ -38,6 +38,8 @@ export function measuredReaction({
   intensity = 1,
   observedAt = NOW,
   magnitude,
+  severity,
+  expiresAt,
 } = {}) {
   return {
     key: `reaction:${key}`,
@@ -54,6 +56,8 @@ export function measuredReaction({
     observedAt,
     originalAt: observedAt,
     magnitude,
+    severity,
+    expiresAt,
     title: 'A measured record',
     url: 'https://example.com/record',
   };
