@@ -2,6 +2,7 @@ import { FETCH, LOCATION } from '../config.js';
 import { HOUR_MS } from '../lib/time.js';
 import { isPlainObject, readFiniteNumber } from '../lib/validate.js';
 import { describeWeatherCode } from '../lib/weatherCodes.js';
+import { formatFahrenheit } from '../lib/units.js';
 import { fetchJson, SourceError } from './http.js';
 
 const WEATHER_PARAMS = new URLSearchParams({
@@ -98,8 +99,8 @@ export function normalizeWeather(payload, { now = Date.now(), fetchedAt = now } 
     sourceId: 'weather',
     sourceLabel: 'Open-Meteo',
     provider: 'Open-Meteo forecast API',
-    title: `${condition.label}, ${Math.round(temperatureC)}°C`,
-    summary: `Feels like ${Math.round(apparentC ?? temperatureC)}°C · ${humidity ?? '—'}% humidity · wind ${Math.round(
+    title: `${condition.label}, ${formatFahrenheit(temperatureC)}`,
+    summary: `Feels like ${formatFahrenheit(apparentC ?? temperatureC)} · ${humidity ?? '—'}% humidity · wind ${Math.round(
       windKmh ?? 0,
     )} km/h`,
     url: WEATHER_URL,

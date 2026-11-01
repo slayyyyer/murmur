@@ -55,6 +55,8 @@ test('Open-Meteo weather parses local time with the returned offset', () => {
   assert.ok(Math.abs(record.observedAt - now) < 60_000);
   assert.equal(record.data.weatherCode, 2);
   assert.match(record.title, /Partly cloudy/);
+  assert.match(record.title, /71°F/);
+  assert.match(record.summary, /Feels like 72°F/);
   assert.equal(record.data.highC, 27);
 });
 
@@ -469,7 +471,7 @@ test('Open-Meteo preserves missing optional readings and accepts valid zero valu
     payload.current.apparent_temperature = value;
     const record = normalizeWeather(payload, { now, fetchedAt: now });
     assert.equal(record.data.apparentC, null);
-    assert.match(record.summary, /Feels like 21°C/);
+    assert.match(record.summary, /Feels like 71°F/);
   }
 
   const zero = weatherPayload(now);
@@ -479,7 +481,7 @@ test('Open-Meteo preserves missing optional readings and accepts valid zero valu
   const zeroRecord = normalizeWeather(zero, { now, fetchedAt: now });
   assert.equal(zeroRecord.data.temperatureC, 0);
   assert.equal(zeroRecord.data.apparentC, 0);
-  assert.match(zeroRecord.summary, /Feels like 0°C/);
+  assert.match(zeroRecord.summary, /Feels like 32°F/);
 
   for (const value of [null, '', false]) {
     const missingTemperature = weatherPayload(now);

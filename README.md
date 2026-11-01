@@ -349,7 +349,7 @@ For repeated nature event IDs (iNaturalist observation IDs, EONET event IDs), th
 
 ### What each source contributes
 
-- **Weather** — deterministic WMO-code and temperature rules (clear and mild → happy; rain → sad; storms → uneasy; heat → frustrated; cold → sad; overcast → calm).
+- **Weather** — deterministic WMO-code and temperature rules, displayed in Fahrenheit (clear and mild → happy; rain → sad; storms → uneasy; heat → frustrated; cold → sad; overcast → calm).
 - **Weather alerts** — official NWS watches, warnings, and advisories for Charlotte. Severity sets the intensity; heat and fire-weather alerts add frustration, air-quality and smoke alerts add sadness, and other hazards add watchful unease. No damage or danger beyond the listed area is assumed.
 - **Air quality** — deterministic US AQI bands, labeled as modeled.
 - **River level** — the South Fork Catawba at Lowell, about 25 km west of Charlotte, using NOAA NWPS observed stage and published action/minor/moderate/major flood categories. Action and minor flooding add unease; moderate and major flooding add sadness. No local damage is assumed from the gauge alone.
@@ -418,6 +418,7 @@ src/
     parseFeed.js           Dependency-free RSS/Atom parser
     dedupe.js              Stable keys, headline normalization, dedupe
     weatherCodes.js        WMO labels and glyphs
+    units.js               Celsius-to-Fahrenheit display formatting
   sources/
     http.js                Deadline and byte-bounded fetch helpers
     openMeteo.js           Weather and air quality adapters

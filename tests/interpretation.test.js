@@ -187,8 +187,10 @@ test('deterministic weather rules are transparent and mood-shaped', () => {
   const rain = weatherRule({ data: { weatherCode: 63, temperatureC: 12, apparentC: 10 } });
   assert.equal(sunny.mood, 'happy');
   assert.match(sunny.text, /Clear skies/);
+  assert.match(sunny.text, /72°F/);
   assert.equal(storm.mood, 'uneasy');
   assert.equal(rain.mood, 'sad');
+  assert.match(rain.text, /54°F/);
   assert.ok(sunny.intensity <= 1 && storm.intensity <= 1 && rain.intensity <= 1);
 });
 

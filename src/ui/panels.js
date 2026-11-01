@@ -14,6 +14,7 @@ import {
 } from '../config.js';
 import { formatDateTime, formatPercent, formatRelative, formatStrength } from '../lib/time.js';
 import { escapeHtml } from '../lib/validate.js';
+import { formatFahrenheit } from '../lib/units.js';
 import { reactionAnchorAt } from '../mood/engine.js';
 import {
   dateSummary,
@@ -100,20 +101,25 @@ export function conditionMarkup({ kind, record, sourceState, now = Date.now() })
   if (isWeather) {
     const data = record.data ?? {};
     const facts = [];
-    if (Number.isFinite(data.apparentC)) facts.push(['Feels like', `${Math.round(data.apparentC)}°C`]);
+    const apparentF = formatFahrenheit(data.apparentC);
+    if (apparentF) facts.push(['Feels like', apparentF]);
     if (Number.isFinite(data.humidity)) facts.push(['Humidity', `${Math.round(data.humidity)}%`]);
     if (Number.isFinite(data.windKmh)) facts.push(['Wind', `${Math.round(data.windKmh)} km/h`]);
-    if (Number.isFinite(data.highC) && Number.isFinite(data.lowC)) {
-      facts.push(['Today', `${Math.round(data.lowC)}–${Math.round(data.highC)}°C`]);
+    const highF = formatFahrenheit(data.highC);
+    const lowF = formatFahrenheit(data.lowC);
+    if (highF && lowF) {
+      facts.push(['Today', `${lowF}–${highF}`]);
     }
     if (Number.isFinite(data.precipitationChance)) {
       facts.push(['Rain chance', `${Math.round(data.precipitationChance)}%`]);
     }
 
+    const temperatureF = formatFahrenheit(data.temperatureC);
+
     return `${head}
       <div class="condition-main">
         <span class="condition-glyph" aria-hidden="true">${escapeHtml(data.glyph ?? '◌')}</span>
-        <p class="condition-value">${Number.isFinite(data.temperatureC) ? `${Math.round(data.temperatureC)}°C` : '—'}</p>
+        <p class="condition-value">${temperatureF ?? '—'}</p>
         <p class="condition-label">${escapeHtml(data.condition ?? 'Conditions unavailable')}</p>
       </div>
       <dl class="condition-facts">${facts

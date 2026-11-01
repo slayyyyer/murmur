@@ -1,5 +1,6 @@
 import { formatDate } from '../lib/time.js';
 import { readFiniteNumber } from '../lib/validate.js';
+import { formatFahrenheit } from '../lib/units.js';
 
 const feelsLike = (data) =>
   Number.isFinite(data?.apparentC) ? data.apparentC : Number.isFinite(data?.temperatureC) ? data.temperatureC : null;
@@ -14,7 +15,7 @@ export function weatherRule(record) {
   const temperature = Number(data.temperatureC);
   const feels = feelsLike(data);
   if (!Number.isFinite(code) || !Number.isFinite(temperature) || !Number.isFinite(feels)) return null;
-  const tempText = `${Math.round(temperature)}°C`;
+  const tempText = formatFahrenheit(temperature);
 
   if ([95, 96, 99].includes(code)) {
     return {
@@ -34,14 +35,14 @@ export function weatherRule(record) {
     return {
       mood: 'mad',
       intensity: 0.45,
-      text: `It feels like ${Math.round(feels)}°C in Charlotte. The heat has an impatient edge.`,
+      text: `It feels like ${formatFahrenheit(feels)} in Charlotte. The heat has an impatient edge.`,
     };
   }
   if (feels <= 0) {
     return {
       mood: 'sad',
       intensity: 0.3,
-      text: `It feels like ${Math.round(feels)}°C in Charlotte. The cold asks for patience.`,
+      text: `It feels like ${formatFahrenheit(feels)} in Charlotte. The cold asks for patience.`,
     };
   }
   if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) {
