@@ -14,45 +14,45 @@ export function normalizeAlerts(payload, { now = Date.now(), fetchedAt = now } =
   }
 
   const records = [];
-  let skipped = 0;
+  let invalid = 0;
+  let filtered = 0;
 
-  for (const feature of payload.features.slice(0, 40)) {
+  for (const feature of payload.features) {
     if (!isPlainObject(feature) || !isPlainObject(feature.properties)) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
     const properties = feature.properties;
     if (properties.status && properties.status !== 'Actual') {
-      skipped += 1;
+      filtered += 1;
       continue;
     }
     if (properties.messageType === 'Cancel') {
-      skipped += 1;
+      filtered += 1;
       continue;
     }
 
     const event = sanitizeText(properties.event, 100);
     if (!event) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
     const sentAt = parseTimestamp(properties.sent ?? properties.effective ?? properties.onset);
     const expiresAt = parseTimestamp(properties.expires ?? properties.ends);
-    if (
-      !Number.isFinite(sentAt) ||
-      sentAt > now + 5 * 60 * 1000 ||
-      !Number.isFinite(expiresAt) ||
-      expiresAt <= now
-    ) {
-      skipped += 1;
+    if (!Number.isFinite(sentAt) || sentAt > now + 5 * 60 * 1000 || !Number.isFinite(expiresAt)) {
+      invalid += 1;
+      continue;
+    }
+    if (expiresAt <= now) {
+      filtered += 1;
       continue;
     }
 
     const rawId = sanitizeText(properties.id ?? feature.id, 160);
     if (!rawId) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
@@ -97,7 +97,13 @@ export function normalizeAlerts(payload, { now = Date.now(), fetchedAt = now } =
   }
 
   records.sort((a, b) => b.originalAt - a.originalAt);
-  return { records: records.slice(0, 20), skipped };
+  return {
+    records: records.slice(0, 20),
+    skipped: invalid + filtered,
+    invalid,
+    filtered,
+    total: payload.features.length,
+  };
 }
 
 export function alertsLoader({ fetchImpl = globalThis.fetch } = {}) {
@@ -115,13 +121,17 @@ export function alertsLoader({ fetchImpl = globalThis.fetch } = {}) {
           timeoutMs: FETCH.timeoutMs,
           headers: { 'user-agent': 'Murmur/1.0 (https://github.com/slayyyyer/murmur)' },
         });
-        const { records, skipped } = normalizeAlerts(response.data, { now: fetchedAt, fetchedAt });
+        const { records, skipped, invalid, filtered, total } = normalizeAlerts(response.data, {
+          now: fetchedAt,
+          fetchedAt,
+        });
+        const malformed = records.length === 0 && invalid > 0;
         return {
-          status: records.length ? 'live' : 'empty',
+          status: records.length ? 'live' : malformed ? 'malformed' : 'empty',
           records,
           fetchedAt,
-          error: null,
-          detail: { skipped, total: Array.isArray(response.data?.features) ? response.data.features.length : 0 },
+          error: malformed ? `No usable weather alerts; ${invalid} malformed entr${invalid === 1 ? 'y' : 'ies'}.` : null,
+          detail: { skipped, invalid, filtered, total },
         };
       } catch (error) {
         return {

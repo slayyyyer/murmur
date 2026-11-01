@@ -4,6 +4,7 @@ import {
   coarseDistanceKm,
   haversineKm,
   isPlainObject,
+  readFiniteNumber,
   safeHttpsUrl,
   sanitizeText,
   validCoordinates,
@@ -32,36 +33,62 @@ export function normalizeEonet(payload, { now = Date.now(), fetchedAt = now } = 
   }
 
   const records = [];
-  let skipped = 0;
+  let invalid = 0;
+  let filtered = 0;
 
-  for (const event of payload.events.slice(0, 80)) {
-    if (!isPlainObject(event) || event.closed !== null) {
-      skipped += 1;
+  for (const event of payload.events) {
+    if (!isPlainObject(event)) {
+      invalid += 1;
+      continue;
+    }
+    if (event.closed === undefined) {
+      invalid += 1;
+      continue;
+    }
+    if (event.closed !== null) {
+      filtered += 1;
       continue;
     }
 
-    const categories = Array.isArray(event.categories)
-      ? event.categories.filter((category) => isPlainObject(category) && ALLOWED_CATEGORIES.has(category.id))
-      : [];
+    if (!Array.isArray(event.categories)) {
+      invalid += 1;
+      continue;
+    }
+    const categories = event.categories.filter(
+      (category) => isPlainObject(category) && ALLOWED_CATEGORIES.has(category.id),
+    );
     if (!categories.length) {
-      skipped += 1;
+      filtered += 1;
       continue;
     }
 
     const geometry = Array.isArray(event.geometry) ? event.geometry : [];
+    if (!geometry.length) {
+      invalid += 1;
+      continue;
+    }
     const points = [];
+    let invalidPoint = false;
     for (const point of geometry) {
-      if (!isPlainObject(point)) continue;
+      if (!isPlainObject(point)) {
+        invalidPoint = true;
+        continue;
+      }
       const at = parseTimestamp(point.date);
       const coordinates = Array.isArray(point.coordinates) ? point.coordinates : [];
-      const longitude = Number(coordinates[0]);
-      const latitude = Number(coordinates[1]);
-      if (!Number.isFinite(at) || !validCoordinates(latitude, longitude) || at > now + 5 * 60 * 1000) continue;
+      const longitude = readFiniteNumber(coordinates[0]);
+      const latitude = readFiniteNumber(coordinates[1]);
+      if (!Number.isFinite(at) || latitude === null || longitude === null || !validCoordinates(latitude, longitude)) {
+        invalidPoint = true;
+        continue;
+      }
+      if (at > now + 5 * 60 * 1000) continue;
       points.push({ at, latitude, longitude, magnitudeValue: point.magnitudeValue, magnitudeUnit: point.magnitudeUnit });
     }
 
     if (!points.length) {
-      skipped += 1;
+      if (invalidPoint) invalid += 1;
+      else filtered += 1;
       continue;
     }
 
@@ -70,7 +97,7 @@ export function normalizeEonet(payload, { now = Date.now(), fetchedAt = now } = 
     const latest = points[points.length - 1];
     const id = typeof event.id === 'string' && event.id.trim() ? event.id.trim() : null;
     if (!id) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
@@ -78,7 +105,7 @@ export function normalizeEonet(payload, { now = Date.now(), fetchedAt = now } = 
       safeHttpsUrl(event.link, { allowedHosts: ['eonet.gsfc.nasa.gov'] }) ??
       safeHttpsUrl(`https://eonet.gsfc.nasa.gov/api/v3/events/${encodeURIComponent(id)}`);
     if (!url) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
@@ -112,14 +139,20 @@ export function normalizeEonet(payload, { now = Date.now(), fetchedAt = now } = 
         firstAt: first.at,
         latestAt: latest.at,
         distanceKm,
-        magnitudeValue: Number.isFinite(Number(latest.magnitudeValue)) ? Number(latest.magnitudeValue) : null,
+        magnitudeValue: readFiniteNumber(latest.magnitudeValue),
         magnitudeUnit: sanitizeText(latest.magnitudeUnit, 20),
       },
     });
   }
 
   records.sort((a, b) => b.observedAt - a.observedAt);
-  return { records: records.slice(0, 50), skipped };
+  return {
+    records: records.slice(0, 50),
+    skipped: invalid + filtered,
+    invalid,
+    filtered,
+    total: payload.events.length,
+  };
 }
 
 export function eonetLoader({ fetchImpl = globalThis.fetch } = {}) {
@@ -137,13 +170,17 @@ export function eonetLoader({ fetchImpl = globalThis.fetch } = {}) {
           timeoutMs: FETCH.timeoutMs,
           maxBytes: FETCH.jsonMaxBytes,
         });
-        const { records, skipped } = normalizeEonet(response.data, { now: fetchedAt, fetchedAt });
+        const { records, skipped, invalid, filtered, total } = normalizeEonet(response.data, {
+          now: fetchedAt,
+          fetchedAt,
+        });
+        const malformed = records.length === 0 && invalid > 0;
         return {
-          status: records.length ? 'live' : 'empty',
+          status: records.length ? 'live' : malformed ? 'malformed' : 'empty',
           records,
           fetchedAt,
-          error: null,
-          detail: { skipped, total: Array.isArray(response.data?.events) ? response.data.events.length : 0 },
+          error: malformed ? `No usable NASA events; ${invalid} malformed entr${invalid === 1 ? 'y' : 'ies'}.` : null,
+          detail: { skipped, invalid, filtered, total },
         };
       } catch (error) {
         return {

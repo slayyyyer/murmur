@@ -4,6 +4,7 @@ import {
   coarseDistanceKm,
   haversineKm,
   isPlainObject,
+  readFiniteNumber,
   safeHttpsUrl,
   sanitizeText,
   validCoordinates,
@@ -41,21 +42,30 @@ export function normalizeWildlife(payload, { now = Date.now(), fetchedAt = now }
   }
 
   const records = [];
-  let skipped = 0;
+  let invalid = 0;
+  let filtered = 0;
 
-  for (const observation of payload.results.slice(0, 60)) {
-    if (!isPlainObject(observation) || observation.quality_grade !== 'research' || observation.captive === true) {
-      skipped += 1;
+  for (const observation of payload.results) {
+    if (!isPlainObject(observation)) {
+      invalid += 1;
+      continue;
+    }
+    if (typeof observation.quality_grade !== 'string' || !observation.quality_grade) {
+      invalid += 1;
+      continue;
+    }
+    if (observation.quality_grade !== 'research' || observation.captive === true) {
+      filtered += 1;
       continue;
     }
     const taxon = observation.taxon;
     if (!isPlainObject(taxon) || typeof taxon.name !== 'string' || !taxon.name.trim()) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
-    const id = Number(observation.id);
-    if (!Number.isFinite(id)) {
-      skipped += 1;
+    const id = readFiniteNumber(observation.id);
+    if (id === null) {
+      invalid += 1;
       continue;
     }
 
@@ -66,15 +76,19 @@ export function normalizeWildlife(payload, { now = Date.now(), fetchedAt = now }
 
     if (!Number.isFinite(observedAt)) {
       if (!isDateOnly(observedOn)) {
-        skipped += 1;
+        invalid += 1;
         continue;
       }
       observedAt = parseTimestamp(observedOn);
       dateOnly = true;
     }
 
-    if (!Number.isFinite(observedAt) || observedAt > now + HOUR_MS || now - observedAt > 45 * DAY_MS) {
-      skipped += 1;
+    if (!Number.isFinite(observedAt)) {
+      invalid += 1;
+      continue;
+    }
+    if (observedAt > now + HOUR_MS || now - observedAt > 45 * DAY_MS) {
+      filtered += 1;
       continue;
     }
 
@@ -82,7 +96,7 @@ export function normalizeWildlife(payload, { now = Date.now(), fetchedAt = now }
     const url =
       safeHttpsUrl(observation.uri, { allowedHosts: ['inaturalist.org'] }) ?? safeHttpsUrl(fallbackUrl);
     if (!url) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
@@ -120,7 +134,13 @@ export function normalizeWildlife(payload, { now = Date.now(), fetchedAt = now }
   }
 
   records.sort((a, b) => b.observedAt - a.observedAt);
-  return { records: records.slice(0, 40), skipped };
+  return {
+    records: records.slice(0, 40),
+    skipped: invalid + filtered,
+    invalid,
+    filtered,
+    total: payload.results.length,
+  };
 }
 
 export function wildlifeLoader({ fetchImpl = globalThis.fetch } = {}) {
@@ -138,13 +158,17 @@ export function wildlifeLoader({ fetchImpl = globalThis.fetch } = {}) {
           timeoutMs: FETCH.timeoutMs,
           maxBytes: FETCH.jsonMaxBytes,
         });
-        const { records, skipped } = normalizeWildlife(response.data, { now: fetchedAt, fetchedAt });
+        const { records, skipped, invalid, filtered, total } = normalizeWildlife(response.data, {
+          now: fetchedAt,
+          fetchedAt,
+        });
+        const malformed = records.length === 0 && invalid > 0;
         return {
-          status: records.length ? 'live' : 'empty',
+          status: records.length ? 'live' : malformed ? 'malformed' : 'empty',
           records,
           fetchedAt,
-          error: null,
-          detail: { skipped, total: Array.isArray(response.data?.results) ? response.data.results.length : 0 },
+          error: malformed ? `No usable wildlife observations; ${invalid} malformed entr${invalid === 1 ? 'y' : 'ies'}.` : null,
+          detail: { skipped, invalid, filtered, total },
         };
       } catch (error) {
         return {

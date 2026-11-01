@@ -11,15 +11,12 @@ import { createLoaders } from '../src/sources/loaders.js';
 import { createRepository } from '../src/store/repository.js';
 import { createMemoryStore } from '../src/store/memoryStore.js';
 import { dedupeRecords } from '../src/lib/dedupe.js';
-import { DECAY, WORLD_CACHE_SCHEMA_VERSION } from '../src/config.js';
-import { HOUR_MS } from '../src/lib/time.js';
-import { sanitizeText } from '../src/lib/validate.js';
+import { WORLD_CACHE_SCHEMA_VERSION } from '../src/config.js';
 import { interpretNewsWithModel, resolveNewsModelConfig } from '../src/ai/buildNewsModel.js';
-import { validateCachedNewsReactions } from '../src/ai/newsInterpretation.js';
+import { composeSnapshot, prepareBuild } from '../src/app/buildSnapshot.js';
 
 const MAX_SOURCE_RECORDS = 250;
 const MAX_CACHE_BYTES = 4 * 1024 * 1024;
-const NEWS_FUTURE_MS = 5 * 60_000;
 
 const proxyBase = process.env.MURMUR_PROXY?.trim();
 if (!proxyBase) {
@@ -69,41 +66,21 @@ if (result.ingestError) {
   throw new Error(`The in-memory cache database rejected records: ${result.ingestError}`);
 }
 
-const deduped = dedupeRecords(result.outcomes.flatMap((source) => source.records));
-
-const sources = result.outcomes.map((source) => ({
-  sourceId: source.sourceId,
-  label: source.label,
-  provider: source.provider,
-  homepage: source.homepage,
-  group: source.group,
-  status: source.status,
-  error: source.error ? sanitizeText(source.error, 300) : null,
-  fetchedAt: Number.isFinite(Number(source.fetchedAt)) ? Number(source.fetchedAt) : now,
-  records: deduped.records
-    .filter((record) => record.sourceId === source.sourceId)
-    .slice(0, MAX_SOURCE_RECORDS),
-}));
+const current = dedupeRecords(result.outcomes.flatMap((source) => source.records));
+const previous = await readPreviousCache();
+const plan = prepareBuild({
+  outcomes: result.outcomes,
+  records: current.records,
+  previous,
+  now,
+  maxSourceRecords: MAX_SOURCE_RECORDS,
+});
+const sources = plan.sources;
 
 const answered = sources.filter((source) => source.status === 'live' || source.status === 'empty').length;
 if (!sources.some((source) => source.status === 'live')) {
   throw new Error('No source returned usable data; the previous Pages deployment will be kept.');
 }
-
-const newsRecords = deduped.records
-  .filter(
-    (record) =>
-      record.group === 'news' &&
-      record.originalAt <= now + NEWS_FUTURE_MS &&
-      now - record.originalAt <= DECAY.news.maxAgeHours * HOUR_MS,
-  )
-  .sort((a, b) => b.originalAt - a.originalAt);
-
-const newsByKey = new Map(newsRecords.map((record) => [record.key, record]));
-const previous = await readPreviousCache();
-const carried = validateCachedNewsReactions(previous?.newsReactions ?? [], new Set(newsByKey.keys()), { now });
-const previousByKey = new Map(carried.reactions.map((reaction) => [reaction.sourceId, reaction]));
-const pending = newsRecords.filter((record) => !previousByKey.has(record.key));
 
 const modelConfig = resolveNewsModelConfig(process.env);
 let modelResult = {
@@ -115,47 +92,17 @@ let modelResult = {
   provider: modelConfig.provider,
 };
 
-if (pending.length) {
+if (plan.pending.length) {
   modelResult = await interpretNewsWithModel({
-    records: pending,
+    records: plan.pending,
     config: modelConfig,
     fetchImpl: fetch,
     now,
   });
 }
 
-const newReactions = modelResult.reactions.map((reaction) => ({
-  sourceId: reaction.sourceId,
-  mood: reaction.mood,
-  intensity: reaction.intensity,
-  text: reaction.text,
-  interpretedAt: now,
-}));
-
-const merged = new Map();
-for (const reaction of carried.reactions) merged.set(reaction.sourceId, reaction);
-for (const reaction of newReactions) merged.set(reaction.sourceId, reaction);
-const newsReactions = [...merged.values()].filter((reaction) => newsByKey.has(reaction.sourceId));
-
-const newsModel = {
-  provider: modelConfig.provider,
-  model: modelConfig.model,
-  configured: modelConfig.configured,
-  available: modelResult.ok,
-  error: modelResult.error ? sanitizeText(modelResult.error, 300) : null,
-  reactionCount: newsReactions.length,
-  interpretedThisRun: newReactions.length,
-  rejectedThisRun: modelResult.rejected?.length ?? 0,
-  generatedAt: now,
-};
-
-const payload = {
-  schemaVersion: WORLD_CACHE_SCHEMA_VERSION,
-  generatedAt: now,
-  newsModel,
-  newsReactions,
-  sources,
-};
+const payload = composeSnapshot({ plan, modelResult, modelConfig, now });
+const newsModel = payload.newsModel;
 const json = JSON.stringify(payload);
 const bytes = Buffer.byteLength(json);
 if (bytes > MAX_CACHE_BYTES) {
@@ -168,8 +115,8 @@ await writeFile(new URL('world-cache.json', dataDirectory), json);
 
 console.log(
   `Wrote data/world-cache.json (${(bytes / 1024).toFixed(1)} KiB): ` +
-    `${answered}/${sources.length} sources answered, ${deduped.records.length} unique records, ` +
-    `${deduped.removed} duplicates removed.`,
+    `${answered}/${sources.length} sources answered, ${plan.records.length} unique records, ` +
+    `${current.removed} duplicates removed.`,
 );
 for (const source of sources) {
   console.log(`  ${source.sourceId.padEnd(12)} ${source.status.padEnd(12)} ${source.records.length} records`);
@@ -177,7 +124,7 @@ for (const source of sources) {
 
 console.log(
   `News model ${modelConfig.provider}/${modelConfig.model}: ` +
-    `${newsReactions.length} cached reactions (${newReactions.length} new, ${carried.reactions.length} carried), ` +
+    `${payload.newsReactions.length} cached reactions (${newsModel.interpretedThisRun} new, ${plan.carried.length} carried), ` +
     `${newsModel.rejectedThisRun} rejected, configured=${modelConfig.configured}, available=${newsModel.available}.`,
 );
 if (newsModel.error) console.log(`  Model note: ${newsModel.error}`);

@@ -141,16 +141,16 @@ export function proxyUrl(target, proxyBase = '') {
   return `${base}/api/proxy?url=${encodeURIComponent(target)}`;
 }
 
-export function normalizeNewsItem(item, feed, { now = Date.now(), fetchedAt = now } = {}) {
+export function classifyNewsItem(item, feed, { now = Date.now(), fetchedAt = now } = {}) {
   const title = sanitizeText(item?.title, 200);
   const url = canonicalizeUrl(item?.link);
-  if (!title || !url) return null;
+  if (!title || !url) return { record: null, reason: 'invalid' };
 
   const publishedAt = parseTimestamp(item.publishedRaw);
-  if (!Number.isFinite(publishedAt)) return null;
+  if (!Number.isFinite(publishedAt)) return { record: null, reason: 'invalid' };
 
   const age = (now - publishedAt) / HOUR_MS;
-  if (age > NEWS_INGEST_MAX_AGE_HOURS || age < -5 / 60) return null;
+  if (age > NEWS_INGEST_MAX_AGE_HOURS || age < -5 / 60) return { record: null, reason: 'filtered' };
 
   const categoryText = Array.isArray(item.categories) ? item.categories.join(' ') : '';
   const topic =
@@ -160,27 +160,34 @@ export function normalizeNewsItem(item, feed, { now = Date.now(), fetchedAt = no
   const summary = sanitizeText(item.summary, 320);
 
   return {
-    key: `news:${hashString(url)}`,
-    group: 'news',
-    sourceId: feed.publisher,
-    sourceLabel: publisher.label,
-    provider: publisher.provider,
-    title,
-    summary,
-    url,
-    originalAt: publishedAt,
-    observedAt: publishedAt,
-    updatedAt: null,
-    fetchedAt,
-    dateOnly: false,
-    data: {
-      publisher: feed.publisher,
-      publisherLabel: publisher.label,
-      topic,
-      feedLabel: feed.label,
-      categories: Array.isArray(item.categories) ? item.categories.slice(0, 6) : [],
+    reason: null,
+    record: {
+      key: `news:${hashString(url)}`,
+      group: 'news',
+      sourceId: feed.publisher,
+      sourceLabel: publisher.label,
+      provider: publisher.provider,
+      title,
+      summary,
+      url,
+      originalAt: publishedAt,
+      observedAt: publishedAt,
+      updatedAt: null,
+      fetchedAt,
+      dateOnly: false,
+      data: {
+        publisher: feed.publisher,
+        publisherLabel: publisher.label,
+        topic,
+        feedLabel: feed.label,
+        categories: Array.isArray(item.categories) ? item.categories.slice(0, 6) : [],
+      },
     },
   };
+}
+
+export function normalizeNewsItem(item, feed, options = {}) {
+  return classifyNewsItem(item, feed, options).record;
 }
 
 export async function loadFeed(feed, { fetchImpl = globalThis.fetch, proxyBase = '', now = Date.now() } = {}) {
@@ -207,24 +214,61 @@ export async function loadFeed(feed, { fetchImpl = globalThis.fetch, proxyBase =
     }
 
     const records = [];
+    let invalid = 0;
+    let filtered = 0;
     for (const item of parsed.items.slice(0, 40)) {
-      const record = normalizeNewsItem(item, feed, { now, fetchedAt });
-      if (record) records.push(record);
+      const result = classifyNewsItem(item, feed, { now, fetchedAt });
+      if (result.record) records.push(result.record);
+      else if (result.reason === 'invalid') invalid += 1;
+      else filtered += 1;
     }
 
     records.sort((a, b) => b.originalAt - a.originalAt);
     const unique = dedupeRecords(records).records.slice(0, NEWS_ITEMS_PER_FEED);
+    const detail = {
+      invalid: invalid + parsed.invalidItems,
+      filtered,
+      parsed: parsed.items.length,
+      total: parsed.totalItems,
+    };
 
     if (!parsed.items.length) {
-      return { feed, status: 'empty', error: null, records: [], itemCount: 0, fetchedAt };
+      if (parsed.invalidItems > 0) {
+        return {
+          feed,
+          status: 'malformed',
+          error: `Feed contained ${parsed.invalidItems} item${
+            parsed.invalidItems === 1 ? '' : 's'
+          } without a usable headline and link.`,
+          records: [],
+          itemCount: 0,
+          detail,
+          fetchedAt,
+        };
+      }
+      return { feed, status: 'empty', error: null, records: [], itemCount: 0, detail, fetchedAt };
     }
     if (!records.length) {
+      if (invalid > 0) {
+        return {
+          feed,
+          status: 'malformed',
+          error: `No item had a usable headline, safe link, and original date; ${invalid} malformed item${
+            invalid === 1 ? '' : 's'
+          }.`,
+          records: [],
+          itemCount: parsed.items.length,
+          detail,
+          fetchedAt,
+        };
+      }
       return {
         feed,
         status: 'empty',
-        error: 'No item had a usable headline, safe link, and original date.',
+        error: null,
         records: [],
         itemCount: parsed.items.length,
+        detail,
         fetchedAt,
       };
     }
@@ -235,6 +279,7 @@ export async function loadFeed(feed, { fetchImpl = globalThis.fetch, proxyBase =
       error: null,
       records: unique,
       itemCount: parsed.items.length,
+      detail,
       fetchedAt,
     };
   } catch (error) {
@@ -283,6 +328,8 @@ export function createNewsLoader(publisherId, { fetchImpl = globalThis.fetch, pr
             status: result.status,
             error: result.error,
             itemCount: result.records.length,
+            invalid: result.detail?.invalid ?? 0,
+            filtered: result.detail?.filtered ?? 0,
             fetchedAt: result.fetchedAt,
           })),
         },

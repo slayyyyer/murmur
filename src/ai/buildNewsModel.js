@@ -106,7 +106,9 @@ async function requestBatch({ config, records, fetchImpl }) {
       await new Promise((resolve) => setTimeout(resolve, 1_500));
       result = await postCompletion({ config, records, fetchImpl, signal: controller.signal });
     }
-    if (!result.ok) return result;
+    if (!result.ok) {
+      return { ...result, reactions: [], rejected: [] };
+    }
 
     const validated = validateModelReactions(result.raw, new Set(records.map((record) => record.key)));
     return {
@@ -163,22 +165,23 @@ export async function interpretNewsWithModel({
 
   const reactions = [];
   const rejected = [];
-  let error = null;
+  const errors = [];
 
   for (let index = 0; index < candidates.length; index += batchSize) {
     const batch = candidates.slice(index, index + batchSize);
     const result = await requestBatch({ config, records: batch, fetchImpl });
-    reactions.push(...result.reactions);
+    reactions.push(...(result.reactions ?? []));
     rejected.push(...(result.rejected ?? []));
     if (!result.ok) {
-      error = result.error;
-      break;
+      errors.push(result.error ?? 'Model request failed.');
     }
   }
 
+  const error = errors[0] ?? null;
   return {
     ok: reactions.length > 0,
-    error: reactions.length > 0 ? null : error ?? 'No usable reactions passed validation.',
+    error: error ?? (reactions.length > 0 ? null : 'No usable reactions passed validation.'),
+    partial: Boolean(errors.length && reactions.length > 0),
     reactions,
     rejected,
     model: config.model,

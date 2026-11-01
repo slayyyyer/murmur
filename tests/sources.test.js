@@ -4,10 +4,10 @@ import { parseFeed, FeedParseError } from '../src/lib/parseFeed.js';
 import { canonicalizeUrl, safeHttpsUrl } from '../src/lib/validate.js';
 import { classifyTopic, loadFeed, normalizeNewsItem } from '../src/sources/news.js';
 import { normalizeAir, normalizeWeather, parseLocalTimestamp } from '../src/sources/openMeteo.js';
-import { normalizeEarthquakes } from '../src/sources/usgs.js';
-import { normalizeWildlife } from '../src/sources/inaturalist.js';
-import { normalizeEonet } from '../src/sources/eonet.js';
-import { normalizeAlerts } from '../src/sources/alerts.js';
+import { earthquakeLoader, normalizeEarthquakes } from '../src/sources/usgs.js';
+import { normalizeWildlife, wildlifeLoader } from '../src/sources/inaturalist.js';
+import { eonetLoader, normalizeEonet } from '../src/sources/eonet.js';
+import { alertsLoader, normalizeAlerts } from '../src/sources/alerts.js';
 import { normalizeWater } from '../src/sources/water.js';
 import { dedupeRecords } from '../src/lib/dedupe.js';
 import { HOUR, NOW } from './fixtures.js';
@@ -67,6 +67,9 @@ test('Open-Meteo weather rejects a missing or invalid current block', () => {
   const invalidCode = weatherPayload(now);
   invalidCode.current.weather_code = 'stormy';
   assert.throws(() => normalizeWeather(invalidCode, { now }), /code/i);
+  const missingOffset = weatherPayload(now);
+  delete missingOffset.utc_offset_seconds;
+  assert.throws(() => normalizeWeather(missingOffset, { now }), /time/i);
 });
 
 test('local timestamp parsing treats Open-Meteo time as wall clock plus offset', () => {
@@ -347,8 +350,10 @@ test('river gauge keeps the observed stage and published flood categories', () =
   assert.equal(record.data.distanceKm % 5, 0);
   assert.match(record.summary, /minor 10\.0 ft/);
 
-  const invalid = { status: { observed: { primary: null, validTime: observedAt } } };
-  assert.throws(() => normalizeWater(invalid, { now }), /stage/i);
+  for (const primary of [null, '', false]) {
+    const invalid = { status: { observed: { primary, validTime: observedAt } } };
+    assert.throws(() => normalizeWater(invalid, { now }), /stage/i);
+  }
 });
 
 test('RSS parser handles CDATA, entities, and channel items', () => {
@@ -454,4 +459,231 @@ test('safe URL and canonical URL validation reject unsafe forms', () => {
     canonicalizeUrl('https://www.wfae.org/news/story/?utm_source=x&id=2#part'),
     'https://www.wfae.org/news/story?id=2',
   );
+});
+
+test('Open-Meteo preserves missing optional readings and accepts valid zero values', () => {
+  const now = Date.now();
+
+  for (const value of [null, '', false]) {
+    const payload = weatherPayload(now);
+    payload.current.apparent_temperature = value;
+    const record = normalizeWeather(payload, { now, fetchedAt: now });
+    assert.equal(record.data.apparentC, null);
+    assert.match(record.summary, /Feels like 21°C/);
+  }
+
+  const zero = weatherPayload(now);
+  zero.current.temperature_2m = 0;
+  zero.current.apparent_temperature = 0;
+  zero.current.weather_code = 0;
+  const zeroRecord = normalizeWeather(zero, { now, fetchedAt: now });
+  assert.equal(zeroRecord.data.temperatureC, 0);
+  assert.equal(zeroRecord.data.apparentC, 0);
+  assert.match(zeroRecord.summary, /Feels like 0°C/);
+
+  for (const value of [null, '', false]) {
+    const missingTemperature = weatherPayload(now);
+    missingTemperature.current.temperature_2m = value;
+    assert.throws(() => normalizeWeather(missingTemperature, { now }), /temperature/i);
+
+    const missingCode = weatherPayload(now);
+    missingCode.current.weather_code = value;
+    assert.throws(() => normalizeWeather(missingCode, { now }), /code/i);
+
+    const missingAqi = airPayload(now);
+    missingAqi.current.us_aqi = value;
+    assert.throws(() => normalizeAir(missingAqi, { now }), /AQI/i);
+  }
+
+  const zeroAir = airPayload(now);
+  zeroAir.current.us_aqi = 0;
+  const airRecord = normalizeAir(zeroAir, { now, fetchedAt: now });
+  assert.equal(airRecord.data.usAqi, 0);
+  assert.equal(airRecord.data.category, 'Good');
+});
+
+test('a major earthquake survives the recency selection and both record limits', () => {
+  const now = NOW;
+  const feature = (id, magnitude, time) => ({
+    id,
+    properties: {
+      mag: magnitude,
+      place: 'Somewhere',
+      time,
+      url: `https://earthquake.usgs.gov/earthquakes/eventpage/${id}`,
+    },
+    geometry: { coordinates: [-80, 35, 10] },
+  });
+  const features = Array.from({ length: 401 }, (_, index) =>
+    feature(`small-${index}`, 1, now - index * 60_000),
+  );
+  features.push(feature('major', 7, now - 2 * HOUR));
+
+  const { records } = normalizeEarthquakes({ features }, { now, fetchedAt: now });
+  assert.equal(records.length, 120);
+  assert.ok(records.some((record) => record.key === 'quake:major'));
+  assert.equal(records.find((record) => record.key === 'quake:major').data.magnitude, 7);
+});
+
+test('malformed feed items are reported instead of looking like empty feeds', async () => {
+  const feed = { publisher: 'wfae', topic: 'local', label: 'WFAE Local', url: 'https://www.wfae.org/news.rss' };
+  const now = NOW;
+  const pubDate = new Date(now - HOUR).toUTCString();
+  const fetchXml = (xml) => async (url) => ({
+    ok: true,
+    status: 200,
+    url,
+    headers: { get: () => 'application/rss+xml' },
+    text: async () => xml,
+  });
+
+  assert.throws(
+    () => parseFeed('<rss version="2.0"><channel><title>Broken</title><item><title>No close</title>'),
+    /truncated/i,
+  );
+  assert.throws(
+    () => parseFeed('<rss version="2.0"><channel><title>No channel close</title></channel>'),
+    /truncated/i,
+  );
+  assert.throws(() => parseFeed('<rss version="2.0"><title>No channel</title></rss>'), /channel/i);
+
+  const malformed = await loadFeed(feed, {
+    fetchImpl: fetchXml(
+      '<rss version="2.0"><channel><title>WFAE</title><item><title>No link</title></item></channel></rss>',
+    ),
+    proxyBase: 'http://localhost:8080',
+    now,
+  });
+  assert.equal(malformed.status, 'malformed');
+  assert.match(malformed.error, /without a usable headline and link/i);
+
+  const filtered = await loadFeed(feed, {
+    fetchImpl: fetchXml(
+      `<rss version="2.0"><channel><title>WFAE</title><item><title>Old story</title><link>https://www.wfae.org/old</link><pubDate>${new Date(
+        now - 100 * HOUR,
+      ).toUTCString()}</pubDate></item></channel></rss>`,
+    ),
+    proxyBase: 'http://localhost:8080',
+    now,
+  });
+  assert.equal(filtered.status, 'empty');
+  assert.equal(filtered.error, null);
+
+  const mixed = await loadFeed(feed, {
+    fetchImpl: fetchXml(
+      `<rss version="2.0"><channel><title>WFAE</title><item><title>Current story</title><link>https://www.wfae.org/current</link><pubDate>${pubDate}</pubDate></item><item><title>No link</title></item></channel></rss>`,
+    ),
+    proxyBase: 'http://localhost:8080',
+    now,
+  });
+  assert.equal(mixed.status, 'live');
+  assert.equal(mixed.detail.invalid, 1);
+});
+
+test('list loaders distinguish malformed-only, filtered and empty collections', async () => {
+  const now = Date.now();
+  const jsonFetch = (payload) => async (url) => ({
+    ok: true,
+    status: 200,
+    url,
+    headers: { get: () => 'application/json' },
+    text: async () => JSON.stringify(payload),
+  });
+
+  const malformed = [
+    earthquakeLoader({ fetchImpl: jsonFetch({ features: [{}] }) }),
+    alertsLoader({ fetchImpl: jsonFetch({ features: [{}] }) }),
+    wildlifeLoader({ fetchImpl: jsonFetch({ results: [{}] }) }),
+    eonetLoader({ fetchImpl: jsonFetch({ events: [{}] }) }),
+  ];
+  for (const loader of malformed) {
+    const result = await loader.load();
+    assert.equal(result.status, 'malformed', loader.id);
+    assert.match(result.error, /malformed/i);
+  }
+
+  const empty = [
+    earthquakeLoader({ fetchImpl: jsonFetch({ features: [] }) }),
+    alertsLoader({ fetchImpl: jsonFetch({ features: [] }) }),
+    wildlifeLoader({ fetchImpl: jsonFetch({ results: [] }) }),
+    eonetLoader({ fetchImpl: jsonFetch({ events: [] }) }),
+  ];
+  for (const loader of empty) {
+    const result = await loader.load();
+    assert.equal(result.status, 'empty', loader.id);
+    assert.equal(result.error, null, loader.id);
+  }
+
+  const sent = new Date(now - 2 * HOUR).toISOString();
+  const expired = alertsLoader({
+    fetchImpl: jsonFetch({
+      features: [
+        {
+          id: 'expired',
+          properties: {
+            id: 'expired',
+            event: 'Flood Warning',
+            sent,
+            expires: new Date(now - HOUR).toISOString(),
+            status: 'Actual',
+          },
+        },
+      ],
+    }),
+  });
+  assert.equal((await expired.load()).status, 'empty');
+
+  const futureQuake = earthquakeLoader({
+    fetchImpl: jsonFetch({
+      features: [
+        {
+          id: 'future',
+          properties: { mag: 5, time: now + HOUR },
+          geometry: { coordinates: [-80, 35, 10] },
+        },
+      ],
+    }),
+  });
+  assert.equal((await futureQuake.load()).status, 'empty');
+
+  const casual = wildlifeLoader({ fetchImpl: jsonFetch({ results: [{ quality_grade: 'casual' }] }) });
+  assert.equal((await casual.load()).status, 'empty');
+
+  const closed = eonetLoader({ fetchImpl: jsonFetch({ events: [{ closed: sent }] }) });
+  assert.equal((await closed.load()).status, 'empty');
+
+  const mixed = earthquakeLoader({
+    fetchImpl: jsonFetch({
+      features: [
+        {
+          id: 'valid',
+          properties: { mag: 5, time: now - HOUR, url: 'https://earthquake.usgs.gov/earthquakes/eventpage/valid' },
+          geometry: { coordinates: [-80, 35, 10] },
+        },
+        {},
+      ],
+    }),
+  });
+  const mixedResult = await mixed.load();
+  assert.equal(mixedResult.status, 'live');
+  assert.equal(mixedResult.detail.invalid, 1);
+});
+
+test('river normalization keeps missing thresholds missing and unknown categories explicit', () => {
+  const now = Date.now();
+  const observedAt = new Date(now - HOUR).toISOString();
+  const payload = {
+    lid: 'LOWN7',
+    name: 'SF Catawba River below George Poston Park, 1 N Lowell',
+    status: {
+      observed: { primary: 16, primaryUnit: 'ft', floodCategory: 'unknown', validTime: observedAt },
+    },
+    flood: { categories: { minor: { stage: 10 } } },
+  };
+
+  const record = normalizeWater(payload, { now, fetchedAt: now });
+  assert.equal(record.data.category, 'unknown');
+  assert.equal(record.data.actionStageFt, null);
+  assert.equal(record.data.minorStageFt, 10);
+  assert.doesNotMatch(record.summary, /action /);
 });

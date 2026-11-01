@@ -1,4 +1,5 @@
 import { formatDate } from '../lib/time.js';
+import { readFiniteNumber } from '../lib/validate.js';
 
 const feelsLike = (data) =>
   Number.isFinite(data?.apparentC) ? data.apparentC : Number.isFinite(data?.temperatureC) ? data.temperatureC : null;
@@ -209,15 +210,25 @@ export function alertRule(record) {
 
 export function waterRule(record) {
   const data = record?.data ?? {};
-  const stage = Number(data.stageFt);
-  if (!Number.isFinite(stage)) return null;
+  const stage = readFiniteNumber(data.stageFt);
+  if (stage === null) return null;
 
   const place = data.name || 'the South Fork Catawba at Lowell';
   const stageText = `${stage.toFixed(2)} ft`;
-  const action = Number(data.actionStageFt);
-  const actionText = Number.isFinite(action) ? `, below its ${action.toFixed(1)} ft action stage` : '';
+  const action = readFiniteNumber(data.actionStageFt);
 
   switch (data.category) {
+    case 'no_flooding': {
+      // A contradictory gauge reading is not evidence of quiet water. Leave it
+      // uninterpreted rather than making a safety claim from the category name.
+      if (action !== null && stage >= action) return null;
+      const actionText = action !== null ? `, below its ${action.toFixed(1)} ft action stage` : '';
+      return {
+        mood: 'calm',
+        intensity: 0.15,
+        text: `${place} is at ${stageText}${actionText}. The river is quiet at the gauge today.`,
+      };
+    }
     case 'action':
       return {
         mood: 'uneasy',
@@ -243,11 +254,9 @@ export function waterRule(record) {
         text: `${place} is at ${stageText}, in major flooding at the gauge. This is a serious reading, not a claim about damage beyond the gauge.`,
       };
     default:
-      return {
-        mood: 'calm',
-        intensity: 0.15,
-        text: `${place} is at ${stageText}${actionText}. The river is quiet at the gauge today.`,
-      };
+      // An unknown or missing flood category cannot establish that the river is
+      // quiet. Keep the reading browsable but let it contribute no mood.
+      return null;
   }
 }
 

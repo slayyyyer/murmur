@@ -382,6 +382,7 @@ async function refresh({ auto = false } = {}) {
           records: source.records,
           error: source.error,
           fetchedAt: source.fetchedAt,
+          lastSuccessAt: source.lastSuccessAt ?? null,
         };
       },
     }));

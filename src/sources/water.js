@@ -4,6 +4,7 @@ import {
   coarseDistanceKm,
   haversineKm,
   isPlainObject,
+  readFiniteNumber,
   sanitizeText,
   validCoordinates,
 } from '../lib/validate.js';
@@ -28,26 +29,23 @@ export function normalizeWater(payload, { now = Date.now(), fetchedAt = now } = 
     throw new SourceError('River-gauge response had no observed stage.', 'malformed');
   }
 
-  if (observed.primary === null || observed.primary === undefined || observed.primary === '') {
-    throw new SourceError('River-gauge stage was missing or invalid.', 'malformed');
-  }
-  const stageFt = Number(observed.primary);
+  const stageFt = readFiniteNumber(observed.primary);
   const observedAt = parseTimestamp(observed.validTime);
-  if (!Number.isFinite(stageFt) || stageFt < -20 || stageFt > 200) {
+  if (stageFt === null || stageFt < -20 || stageFt > 200) {
     throw new SourceError('River-gauge stage was missing or invalid.', 'malformed');
   }
   if (!Number.isFinite(observedAt) || observedAt > now + 6 * 60 * 60 * 1000 || now - observedAt > 7 * 24 * 60 * 60 * 1000) {
     throw new SourceError('River-gauge observation time was missing or outside the plausible window.', 'malformed');
   }
 
-  const category = typeof observed.floodCategory === 'string' ? observed.floodCategory : 'unknown';
-  const categoryLabel = CATEGORY_LABELS[category] ?? 'Category unknown';
+  const category =
+    typeof observed.floodCategory === 'string' && observed.floodCategory.trim()
+      ? observed.floodCategory.trim()
+      : null;
+  const categoryLabel = category ? (CATEGORY_LABELS[category] ?? 'Category unknown') : 'Category unknown';
   const name = sanitizeText(payload.name, 120) || WATER_GAUGE.name;
   const categories = isPlainObject(payload.flood?.categories) ? payload.flood.categories : {};
-  const threshold = (key) => {
-    const value = Number(categories[key]?.stage);
-    return Number.isFinite(value) ? value : null;
-  };
+  const threshold = (key) => readFiniteNumber(categories[key]?.stage);
 
   const latitude = Number(payload.latitude);
   const longitude = Number(payload.longitude);

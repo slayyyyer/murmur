@@ -1,6 +1,6 @@
 import { FETCH, LOCATION } from '../config.js';
 import { HOUR_MS } from '../lib/time.js';
-import { isPlainObject, isFiniteNumber } from '../lib/validate.js';
+import { isPlainObject, readFiniteNumber } from '../lib/validate.js';
 import { describeWeatherCode } from '../lib/weatherCodes.js';
 import { fetchJson, SourceError } from './http.js';
 
@@ -36,8 +36,8 @@ export function parseLocalTimestamp(value, offsetSeconds) {
 }
 
 function optionalNumber(value, min, max) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return null;
+  const number = readFiniteNumber(value);
+  if (number === null) return null;
   return Math.min(max, Math.max(min, number));
 }
 
@@ -56,7 +56,7 @@ export function normalizeWeather(payload, { now = Date.now(), fetchedAt = now } 
     throw new SourceError('Weather response had no current observation.', 'malformed');
   }
   const current = payload.current;
-  const offset = Number(payload.utc_offset_seconds);
+  const offset = readFiniteNumber(payload.utc_offset_seconds);
   const observedAt = parseLocalTimestamp(current.time, offset);
   if (!Number.isFinite(observedAt)) {
     throw new SourceError('Weather observation time was missing or invalid.', 'malformed');
@@ -65,12 +65,12 @@ export function normalizeWeather(payload, { now = Date.now(), fetchedAt = now } 
     throw new SourceError('Weather observation time was outside the plausible window.', 'malformed');
   }
 
-  const temperatureC = Number(current.temperature_2m);
-  const weatherCode = Number(current.weather_code);
-  if (!isFiniteNumber(temperatureC) || temperatureC < -90 || temperatureC > 60) {
+  const temperatureC = readFiniteNumber(current.temperature_2m);
+  const weatherCode = readFiniteNumber(current.weather_code);
+  if (temperatureC === null || temperatureC < -90 || temperatureC > 60) {
     throw new SourceError('Weather temperature was missing or invalid.', 'malformed');
   }
-  if (!Number.isInteger(weatherCode) || weatherCode < 0 || weatherCode > 99) {
+  if (weatherCode === null || !Number.isInteger(weatherCode) || weatherCode < 0 || weatherCode > 99) {
     throw new SourceError('Weather code was missing or invalid.', 'malformed');
   }
 
@@ -134,7 +134,7 @@ export function normalizeAir(payload, { now = Date.now(), fetchedAt = now } = {}
     throw new SourceError('Air-quality response had no current reading.', 'malformed');
   }
   const current = payload.current;
-  const offset = Number(payload.utc_offset_seconds);
+  const offset = readFiniteNumber(payload.utc_offset_seconds);
   const observedAt = parseLocalTimestamp(current.time, offset);
   if (!Number.isFinite(observedAt)) {
     throw new SourceError('Air-quality observation time was missing or invalid.', 'malformed');
@@ -143,8 +143,8 @@ export function normalizeAir(payload, { now = Date.now(), fetchedAt = now } = {}
     throw new SourceError('Air-quality observation time was outside the plausible window.', 'malformed');
   }
 
-  const usAqi = Number(current.us_aqi);
-  if (!isFiniteNumber(usAqi) || usAqi < 0 || usAqi > 500) {
+  const usAqi = readFiniteNumber(current.us_aqi);
+  if (usAqi === null || usAqi < 0 || usAqi > 500) {
     throw new SourceError('Modeled US AQI was missing or invalid.', 'malformed');
   }
 

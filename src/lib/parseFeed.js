@@ -77,6 +77,15 @@ export function parseFeed(xml) {
   if (!isRss && !isAtom) {
     throw new FeedParseError('Response is not an RSS or Atom feed.');
   }
+  if (isRss && !/<channel\b/i.test(source)) {
+    throw new FeedParseError('RSS feed had no channel element.');
+  }
+  if (isRss && (!/<\/channel>/i.test(source) || !/<\/rss>/i.test(source))) {
+    throw new FeedParseError('RSS feed appears truncated before its closing elements.');
+  }
+  if (isAtom && !isRss && !/<\/feed>/i.test(source)) {
+    throw new FeedParseError('Atom feed appears truncated before its closing element.');
+  }
 
   const blockPattern = isAtom && !isRss ? ENTRY_RE : ITEM_RE;
   const blocks = [];
@@ -87,11 +96,25 @@ export function parseFeed(xml) {
     if (match[0].length === 0) pattern.lastIndex += 1;
   }
 
+  const openingTag = isAtom && !isRss ? 'entry' : 'item';
+  const openingCount = (source.match(new RegExp(`<${openingTag}\\b`, 'gi')) ?? []).length;
+  if (openingCount !== blocks.length) {
+    throw new FeedParseError(
+      `Feed contained ${openingCount} ${openingTag} tag${openingCount === 1 ? '' : 's'} but only ${blocks.length} complete ${openingTag}${
+        blocks.length === 1 ? '' : 's'
+      }; the response appears truncated.`,
+    );
+  }
+
   const items = [];
+  let invalidItems = 0;
   for (const block of blocks) {
     const title = readTitle(block);
     const link = readLink(block);
-    if (!title || !link) continue;
+    if (!title || !link) {
+      invalidItems += 1;
+      continue;
+    }
 
     const publishedRaw =
       readTag(block, 'pubDate') ||
@@ -128,6 +151,8 @@ export function parseFeed(xml) {
   return {
     title: cleanText(readTag(channelHead, 'title')),
     items,
+    invalidItems,
+    totalItems: blocks.length,
     isAtom: isAtom && !isRss,
   };
 }

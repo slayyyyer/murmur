@@ -285,6 +285,13 @@ function newsModelNotice(newsModel) {
   if (!newsModel) {
     return `<div class="notice"><strong>News mood has not loaded.</strong> The hourly cache has not provided a news-model status yet.</div>`;
   }
+  if (newsModel.partial) {
+    return `<div class="notice" data-tone="warn"><strong>News mood was only partly generated.</strong> ${escapeHtml(
+      newsModel.error ?? 'Some headlines could not be interpreted.',
+    )} ${newsModel.reactionCount} usable cached reaction${
+      newsModel.reactionCount === 1 ? '' : 's'
+    } remain. Headlines without a reaction stay browsable but do not affect the mood.</div>`;
+  }
   if (newsModel.error) {
     return `<div class="notice" data-tone="bad"><strong>News mood is unavailable.</strong> ${escapeHtml(
       newsModel.error,

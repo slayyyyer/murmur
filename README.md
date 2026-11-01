@@ -14,7 +14,7 @@ GitHub Actions builds the world once an hour:
 
 1. The workflow starts the same allowlisted relay used in local development.
 2. Every adapter fetches its source through that relay or directly from the runner.
-3. `scripts/build-world-cache.js` dedupes the records, carries forward valid earlier news reactions, asks the build-time model to interpret new headlines, and writes `data/world-cache.json`.
+3. `scripts/build-world-cache.js` dedupes the records, retains still-valid earlier records through source failures, carries forward valid earlier news reactions with their original interpretation times, asks the build-time model to interpret new headlines, and writes `data/world-cache.json`.
 4. The app and cache are uploaded as one GitHub Pages artifact.
 5. The browser fetches only that same-origin cache. It never contacts a feed, the relay, or a third-party API.
 
@@ -79,7 +79,7 @@ npm test
 bun tests/run.js
 ```
 
-The suite has 64 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, model-output validation, and cache validation.
+The suite has 78 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, malformed-feed diagnostics, model-output validation, cache validation, and multi-build retention.
 
 ---
 
@@ -232,7 +232,8 @@ The key is read only by `scripts/build-world-cache.js` in the runner. It is neve
 ### Behavior
 
 - The builder reads the previous cache from `PREVIOUS_CACHE_URL` or a local `data/world-cache.json`.
-- It keeps earlier valid reactions for headlines still present, preserving their original `interpretedAt`.
+- When a source fails, it keeps that source's still-valid records within their normal retention window and labels the source with its failure plus its last successful fetch time. A genuinely empty successful response is not relabeled as cached.
+- It keeps earlier valid reactions for retained headlines, preserving their original `interpretedAt` through temporary feed disappearance and recovery.
 - It interprets at most 24 new headlines per run in batches of eight, limited to eligible news from the last 48 hours.
 - If the model is missing or fails, measured sources still deploy. Earlier reactions remain; the cache records the model error, and the interface says news mood is unavailable.
 - The browser saves each reaction once and ages it from `interpretedAt`, never from when the page loaded.

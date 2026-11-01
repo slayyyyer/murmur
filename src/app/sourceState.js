@@ -29,7 +29,9 @@ export function buildSourceStates({
       recordCount,
       detail: outcome.detail ?? null,
       lastAttemptAt: attemptAt,
-      lastSuccessAt: isFresh ? outcome.fetchedAt ?? now : previous?.lastSuccessAt ?? null,
+      lastSuccessAt: isFresh
+        ? outcome.fetchedAt ?? outcome.lastSuccessAt ?? now
+        : outcome.lastSuccessAt ?? previous?.lastSuccessAt ?? null,
     };
   });
 }

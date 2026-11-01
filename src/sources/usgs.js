@@ -1,7 +1,14 @@
 import { FETCH, LOCATION } from '../config.js';
 import { hashString } from '../lib/dedupe.js';
 import { parseTimestamp } from '../lib/time.js';
-import { coarseDistanceKm, haversineKm, isPlainObject, safeHttpsUrl, sanitizeText } from '../lib/validate.js';
+import {
+  coarseDistanceKm,
+  haversineKm,
+  isPlainObject,
+  readFiniteNumber,
+  safeHttpsUrl,
+  sanitizeText,
+} from '../lib/validate.js';
 import { fetchJson, SourceError } from './http.js';
 import { proxyUrl } from './news.js';
 
@@ -12,51 +19,53 @@ export function normalizeEarthquakes(payload, { now = Date.now(), fetchedAt = no
     throw new SourceError('Earthquake response had no feature list.', 'malformed');
   }
 
+  const features = payload.features;
   const records = [];
-  let skipped = 0;
+  let invalid = 0;
+  let filtered = 0;
 
-  for (const feature of payload.features.slice(0, 400)) {
+  for (const feature of features) {
     if (!isPlainObject(feature)) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
     const properties = feature.properties;
     const geometry = feature.geometry;
     if (!isPlainObject(properties) || !isPlainObject(geometry)) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
     if (properties.mag === null || properties.mag === undefined || properties.mag === '') {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
-    const magnitude = Number(properties.mag);
+    const magnitude = readFiniteNumber(properties.mag);
     const originAt = parseTimestamp(properties.time);
     const updatedAt = parseTimestamp(properties.updated);
     const coordinates = Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
-    const longitude = Number(coordinates[0]);
-    const latitude = Number(coordinates[1]);
-    const depthKm = Number(coordinates[2]);
+    const longitude = readFiniteNumber(coordinates[0]);
+    const latitude = readFiniteNumber(coordinates[1]);
+    const depthKm = readFiniteNumber(coordinates[2]);
 
     if (
-      !Number.isFinite(magnitude) ||
+      magnitude === null ||
       magnitude < -2 ||
       magnitude > 10 ||
       !Number.isFinite(originAt) ||
-      !Number.isFinite(latitude) ||
+      latitude === null ||
       latitude < -90 ||
       latitude > 90 ||
-      !Number.isFinite(longitude) ||
+      longitude === null ||
       longitude < -180 ||
       longitude > 180
     ) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
     if (originAt > now + 5 * 60 * 1000) {
-      skipped += 1;
+      filtered += 1;
       continue;
     }
 
@@ -66,7 +75,7 @@ export function normalizeEarthquakes(payload, { now = Date.now(), fetchedAt = no
       : null;
     const url = safeHttpsUrl(properties.url) ?? safeHttpsUrl(fallbackUrl);
     if (!url) {
-      skipped += 1;
+      invalid += 1;
       continue;
     }
 
@@ -74,7 +83,7 @@ export function normalizeEarthquakes(payload, { now = Date.now(), fetchedAt = no
       haversineKm(LOCATION.latitude, LOCATION.longitude, latitude, longitude),
     );
     const place = sanitizeText(properties.place, 120) || 'Unlocated earthquake';
-    const depthText = Number.isFinite(depthKm) ? `${Math.round(depthKm)} km deep` : 'depth unknown';
+    const depthText = depthKm === null ? 'depth unknown' : `${Math.round(depthKm)} km deep`;
 
     records.push({
       key: `quake:${id ?? hashString(`${originAt}:${latitude}:${longitude}:${magnitude}`)}`,
@@ -94,19 +103,40 @@ export function normalizeEarthquakes(payload, { now = Date.now(), fetchedAt = no
       dateOnly: false,
       data: {
         magnitude,
-        depthKm: Number.isFinite(depthKm) ? depthKm : null,
+        depthKm,
         place,
         distanceKm,
         tsunami: Boolean(properties.tsunami),
         alert: typeof properties.alert === 'string' ? properties.alert : null,
-        significance: Number.isFinite(Number(properties.sig)) ? Number(properties.sig) : null,
+        significance: readFiniteNumber(properties.sig),
         status: typeof properties.status === 'string' ? properties.status : null,
       },
     });
   }
 
   records.sort((a, b) => b.originalAt - a.originalAt);
-  return { records: records.slice(0, 120), skipped };
+  let limited = records.slice(0, 120);
+  if (records.length > limited.length) {
+    // Recency is the default order, but a major earthquake must not be pushed
+    // out of the snapshot by a burst of newer, tiny events.
+    const strongest = records.reduce((best, record) => {
+      if (!best) return record;
+      if (record.data.magnitude > best.data.magnitude) return record;
+      if (record.data.magnitude === best.data.magnitude && record.originalAt > best.originalAt) return record;
+      return best;
+    }, null);
+    if (strongest && !limited.includes(strongest)) {
+      limited = [...limited.slice(0, -1), strongest].sort((a, b) => b.originalAt - a.originalAt);
+    }
+  }
+
+  return {
+    records: limited,
+    skipped: invalid + filtered,
+    invalid,
+    filtered,
+    total: features.length,
+  };
 }
 
 export function earthquakeLoader({ fetchImpl = globalThis.fetch, proxyBase = '' } = {}) {
@@ -124,13 +154,17 @@ export function earthquakeLoader({ fetchImpl = globalThis.fetch, proxyBase = '' 
           timeoutMs: FETCH.timeoutMs,
           maxBytes: FETCH.jsonMaxBytes,
         });
-        const { records, skipped } = normalizeEarthquakes(response.data, { now: fetchedAt, fetchedAt });
+        const { records, skipped, invalid, filtered, total } = normalizeEarthquakes(response.data, {
+          now: fetchedAt,
+          fetchedAt,
+        });
+        const malformed = records.length === 0 && invalid > 0;
         return {
-          status: records.length ? 'live' : 'empty',
+          status: records.length ? 'live' : malformed ? 'malformed' : 'empty',
           records,
           fetchedAt,
-          error: null,
-          detail: { skipped, total: Array.isArray(response.data?.features) ? response.data.features.length : 0 },
+          error: malformed ? `No usable earthquake features; ${invalid} malformed entr${invalid === 1 ? 'y' : 'ies'}.` : null,
+          detail: { skipped, invalid, filtered, total },
         };
       } catch (error) {
         return {

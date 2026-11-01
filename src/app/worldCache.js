@@ -17,6 +17,10 @@ const MAX_SOURCES = 20;
 const MAX_RECORDS_PER_SOURCE = 250;
 const MAX_DATA_BYTES = 2_000;
 
+function nonNegativeInteger(value) {
+  return Number.isFinite(Number(value)) ? Math.max(0, Math.trunc(Number(value))) : 0;
+}
+
 function normalizeKey(value) {
   if (typeof value !== 'string') return null;
   const key = value.trim();
@@ -140,6 +144,13 @@ export function validateWorldCache(payload, { now = Date.now() } = {}) {
       if (status === 'malformed') error = 'The cached response had no records that passed validation.';
     }
 
+    const parsedLastSuccess =
+      rawSource.lastSuccessAt === null || rawSource.lastSuccessAt === undefined
+        ? null
+        : validTimestamp(rawSource.lastSuccessAt, { now, requireTimestamp: true });
+    const lastSuccessAt =
+      parsedLastSuccess ?? (status === 'live' || status === 'empty' ? fetchedAt : null);
+
     sources.push({
       sourceId: definition.id,
       label: definition.label,
@@ -149,6 +160,8 @@ export function validateWorldCache(payload, { now = Date.now() } = {}) {
       status,
       error,
       fetchedAt,
+      lastSuccessAt,
+      carriedRecords: nonNegativeInteger(rawSource.carriedRecords),
       records,
     });
   }
@@ -173,9 +186,10 @@ export function validateWorldCache(payload, { now = Date.now() } = {}) {
     model: sanitizeText(rawModel.model, 120) || 'No model',
     error: sanitizeText(rawModel.error, 300) || null,
     reactionCount: validatedReactions.reactions.length,
-    interpretedThisRun: Number.isFinite(Number(rawModel.interpretedThisRun))
-      ? Math.max(0, Math.trunc(Number(rawModel.interpretedThisRun)))
-      : 0,
+    interpretedThisRun: nonNegativeInteger(rawModel.interpretedThisRun),
+    carriedThisRun: nonNegativeInteger(rawModel.carriedThisRun),
+    rejectedThisRun: nonNegativeInteger(rawModel.rejectedThisRun),
+    partial: rawModel.partial === true,
     generatedAt:
       validTimestamp(rawModel.generatedAt ?? generatedAt, { now, requireTimestamp: true }) ?? generatedAt,
   };

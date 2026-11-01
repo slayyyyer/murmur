@@ -272,3 +272,136 @@ test('news decay is anchored to first interpretation, not the model timestamp', 
   assert.equal(reaction.intensity >= 0 && reaction.intensity <= 1, true);
   assert.ok(HOUR > 0);
 });
+
+test('unknown river categories do not become quiet-water claims', () => {
+  assert.equal(waterRule({ data: { stageFt: 16, actionStageFt: 9, category: 'unknown' } }), null);
+  assert.equal(waterRule({ data: { stageFt: 16, actionStageFt: 9, category: 'no_flooding' } }), null);
+
+  const missingThreshold = waterRule({
+    data: { stageFt: 2.2, category: 'no_flooding', actionStageFt: null },
+  });
+  assert.equal(missingThreshold.mood, 'calm');
+  assert.doesNotMatch(missingThreshold.text, /action stage/i);
+});
+
+function modelConfig(overrides = {}) {
+  return {
+    configured: true,
+    apiKey: 'test-key',
+    baseUrl: 'https://api.example.com/v1',
+    model: 'test-model',
+    provider: 'Test',
+    batchSize: 8,
+    maxHeadlines: 24,
+    timeoutMs: 5_000,
+    ...overrides,
+  };
+}
+
+function modelRecords(...keys) {
+  return keys.map((key) => ({ key, title: 'A headline', sourceLabel: 'BBC', group: 'news' }));
+}
+
+test('model HTTP failures and invalid responses are normalized without throwing', async () => {
+  const cases = [
+    {
+      name: 'HTTP 401',
+      fetchImpl: async () => new Response('', { status: 401 }),
+      pattern: /HTTP 401/,
+    },
+    {
+      name: 'malformed JSON',
+      fetchImpl: async () => new Response('not json', { status: 200 }),
+      pattern: /malformed JSON/i,
+    },
+    {
+      name: 'missing content',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ choices: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      pattern: /message content/i,
+    },
+  ];
+
+  for (const entry of cases) {
+    const result = await interpretNewsWithModel({
+      records: modelRecords('news:one'),
+      config: modelConfig(),
+      fetchImpl: entry.fetchImpl,
+      now: NOW,
+    });
+    assert.equal(result.ok, false, entry.name);
+    assert.deepEqual(result.reactions, [], entry.name);
+    assert.deepEqual(result.rejected, [], entry.name);
+    assert.match(result.error, entry.pattern, entry.name);
+  }
+});
+
+test('model timeouts are normalized without throwing', async () => {
+  const fetchImpl = async (url, { signal }) =>
+    new Promise((resolve, reject) => {
+      const abort = () => {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        reject(error);
+      };
+      if (signal.aborted) abort();
+      else signal.addEventListener('abort', abort, { once: true });
+    });
+
+  const result = await interpretNewsWithModel({
+    records: modelRecords('news:one'),
+    config: modelConfig({ timeoutMs: 10 }),
+    fetchImpl,
+    now: NOW,
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.reactions, []);
+  assert.match(result.error, /timed out/i);
+});
+
+test('a failed later batch preserves an earlier successful batch and reports the failure', async () => {
+  let call = 0;
+  const fetchImpl = async () => {
+    call += 1;
+    if (call === 1) {
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  reactions: [
+                    {
+                      sourceId: 'news:one',
+                      mood: 'hopeful',
+                      intensity: 0.4,
+                      text: 'Encouraged by people choosing to cooperate.',
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return new Response('', { status: 401 });
+  };
+
+  const result = await interpretNewsWithModel({
+    records: modelRecords('news:one', 'news:two'),
+    config: modelConfig({ batchSize: 1 }),
+    fetchImpl,
+    now: NOW,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reactions.length, 1);
+  assert.equal(result.reactions[0].sourceId, 'news:one');
+  assert.equal(result.partial, true);
+  assert.match(result.error, /HTTP 401/);
+});

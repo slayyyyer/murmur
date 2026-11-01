@@ -11,6 +11,20 @@ export function isFiniteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+/**
+ * Read a finite numeric reading without coercing null, an empty string, or a
+ * boolean into zero. Numeric strings are accepted because some public APIs
+ * return measured values as strings.
+ */
+export function readFiniteNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
