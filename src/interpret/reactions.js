@@ -1,8 +1,8 @@
 import { clamp, sanitizeText } from '../lib/validate.js';
 import { MEASURED_RULES } from './rules.js';
 
-export const NEWS_MOODS = Object.freeze(['happy', 'sad', 'mad', 'confused']);
-export const ALL_MOODS = Object.freeze(['happy', 'sad', 'mad', 'confused', 'calm']);
+export const NEWS_MOODS = Object.freeze(['happy', 'hopeful', 'sad', 'uneasy', 'mad', 'confused']);
+export const ALL_MOODS = Object.freeze([...NEWS_MOODS, 'calm']);
 
 /**
  * Build the stored reaction record. The public shape is

@@ -43,13 +43,16 @@ export function faceSvg(mood = 'calm', { preview = false } = {}) {
         <ellipse cx="168" cy="149" rx="14" ry="7"></ellipse>
       </g>
       <path class="mouth mouth-happy" d="M99 156 q21 24 42 0"></path>
+      <path class="mouth mouth-hopeful" d="M103 159 q17 16 34 0"></path>
       <path class="mouth mouth-sad" d="M102 169 q18 -16 36 0"></path>
+      <path class="mouth mouth-uneasy" d="M104 164 q8 5 16 0 t16 2"></path>
       <path class="mouth mouth-mad" d="M104 166 h32"></path>
       <path class="mouth mouth-confused" d="M102 162 q10 -8 18 0 t18 0"></path>
       <path class="mouth mouth-calm" d="M105 161 q15 8 30 0"></path>
       <path class="mouth mouth-neutral" d="M108 160 h24"></path>
       <ellipse class="face-tear" cx="76" cy="143" rx="4" ry="6"></ellipse>
       <text class="face-question" x="186" y="70">?</text>
+      <text class="face-alert" x="186" y="70">!</text>
     </g>
   </svg>`;
 }

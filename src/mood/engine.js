@@ -264,8 +264,12 @@ function describeMood(mood, { isCalm, leadReaction }) {
   switch (mood) {
     case 'happy':
       return `Light and open — ${phrase} is the strongest pull right now.`;
+    case 'hopeful':
+      return `Open and forward-leaning — ${phrase} is the strongest pull right now.`;
     case 'sad':
       return `A little heavy — ${phrase} is weighing most.`;
+    case 'uneasy':
+      return `Watchful — ${phrase} is stirring a quiet unease.`;
     case 'mad':
       return `Frustrated — ${phrase} is stirring the sharpest reaction.`;
     case 'confused':

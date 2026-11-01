@@ -100,6 +100,31 @@ test('unknown or undated cached news reactions are dropped', () => {
   assert.equal(cache.invalidReactions, 2);
 });
 
+test('cached hopeful and uneasy reactions survive validation', () => {
+  const payload = snapshot();
+  payload.sources[1].records.push(newsRecord({ key: 'news:record-two', title: 'A second headline' }));
+  payload.newsReactions = [
+    {
+      sourceId: 'news:record-one',
+      mood: 'hopeful',
+      intensity: 0.4,
+      text: 'Encouraged by a possible improvement.',
+      interpretedAt: payload.generatedAt,
+    },
+    {
+      sourceId: 'news:record-two',
+      mood: 'uneasy',
+      intensity: 0.3,
+      text: 'Watchful about a possible threat.',
+      interpretedAt: payload.generatedAt,
+    },
+  ];
+
+  const cache = validateWorldCache(payload, { now: NOW });
+  assert.deepEqual(cache.newsReactions.map((reaction) => reaction.mood), ['hopeful', 'uneasy']);
+  assert.equal(cache.invalidReactions, 0);
+});
+
 test('invalid cached records are dropped without discarding the source', () => {
   const payload = snapshot();
   payload.sources[0].records.push(

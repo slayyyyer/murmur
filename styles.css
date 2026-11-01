@@ -15,7 +15,9 @@
   --accent-deep: #5d4099;
   --accent-soft: #eee7fb;
   --happy: #e7a93c;
+  --hopeful: #5aa6a0;
   --sad: #6f8ed6;
+  --uneasy: #b07a86;
   --mad: #dd7463;
   --confused: #a084d3;
   --calm: #79ae90;
@@ -1096,8 +1098,16 @@ code {
   background: var(--happy);
 }
 
+.emotion-row[data-mood="hopeful"] .meter > span {
+  background: var(--hopeful);
+}
+
 .emotion-row[data-mood="sad"] .meter > span {
   background: var(--sad);
+}
+
+.emotion-row[data-mood="uneasy"] .meter > span {
+  background: var(--uneasy);
 }
 
 .emotion-row[data-mood="mad"] .meter > span {
@@ -1408,9 +1418,19 @@ table.source-table {
   --face-cheek: rgba(231, 128, 120, 0.38);
 }
 
+.face--hopeful {
+  --face-accent: var(--hopeful);
+  --face-cheek: rgba(90, 166, 160, 0.28);
+}
+
 .face--sad {
   --face-accent: var(--sad);
   --face-cheek: rgba(111, 142, 214, 0.18);
+}
+
+.face--uneasy {
+  --face-accent: var(--uneasy);
+  --face-cheek: rgba(176, 122, 134, 0.2);
 }
 
 .face--mad {
@@ -1537,10 +1557,23 @@ table.source-table {
   transition: opacity 400ms ease;
 }
 
+.face-alert {
+  fill: var(--face-accent);
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+
 .face--happy .mouth-happy,
 .face--happy .face-cheeks,
+.face--hopeful .mouth-hopeful,
+.face--hopeful .face-cheeks,
 .face--sad .mouth-sad,
 .face--sad .face-tear,
+.face--uneasy .mouth-uneasy,
+.face--uneasy .face-alert,
 .face--mad .mouth-mad,
 .face--mad .face-cheeks,
 .face--confused .mouth-confused,
@@ -1553,9 +1586,15 @@ table.source-table {
 .face--happy .eye-white,
 .face--happy .pupil,
 .face--happy .eye-shine,
+.face--hopeful .eye-white,
+.face--hopeful .pupil,
+.face--hopeful .eye-shine,
 .face--sad .eye-white,
 .face--sad .pupil,
 .face--sad .eye-shine,
+.face--uneasy .eye-white,
+.face--uneasy .pupil,
+.face--uneasy .eye-shine,
 .face--mad .eye-white,
 .face--mad .pupil,
 .face--mad .eye-shine,
@@ -1584,12 +1623,28 @@ table.source-table {
   transform: rotate(6deg) translateY(2px);
 }
 
+.face--hopeful .brow-left {
+  transform: rotate(-4deg) translateY(-4px);
+}
+
+.face--hopeful .brow-right {
+  transform: rotate(4deg) translateY(-4px);
+}
+
 .face--sad .brow-left {
   transform: rotate(13deg) translateY(3px);
 }
 
 .face--sad .brow-right {
   transform: rotate(-13deg) translateY(3px);
+}
+
+.face--uneasy .brow-left {
+  transform: rotate(11deg) translateY(-2px);
+}
+
+.face--uneasy .brow-right {
+  transform: rotate(-3deg) translateY(3px);
 }
 
 .face--mad .brow-left {
@@ -1622,6 +1677,14 @@ table.source-table {
 
 .face--sad .pupil {
   transform: translateY(2px) scale(0.94);
+}
+
+.face--hopeful .pupil {
+  transform: translateY(-2px);
+}
+
+.face--uneasy .pupil {
+  transform: translate(2px, 0);
 }
 
 .preview-face .face-bob,

@@ -79,7 +79,7 @@ npm test
 bun tests/run.js
 ```
 
-The suite has 61 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, model-output validation, and cache validation.
+The suite has 64 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, model-output validation, and cache validation.
 
 ---
 
@@ -125,9 +125,9 @@ The news model is optional. To enable it, add `ZAI_API_KEY` (or `NEWS_MODEL_API_
   "newsReactions": [
     {
       "sourceId": "news:abc123",
-      "mood": "happy",
+      "mood": "hopeful",
       "intensity": 0.4,
-      "text": "Hopeful about people choosing to cooperate.",
+      "text": "Encouraged by people choosing to cooperate.",
       "interpretedAt": 1761945102029
     }
   ],
@@ -153,7 +153,7 @@ Before anything reaches IndexedDB, `src/app/worldCache.js` checks the schema ver
 
 ## What is on screen
 
-- **Face and mood** — happy, sad, mad, confused, or calm, drawn as an inline animated SVG.
+- **Face and mood** — happy, hopeful, sad, uneasy, frustrated, confused, or calm, drawn as an inline animated SVG. The stored key `mad` is displayed as **Frustrated**.
 - **Mood sentence** — a short description of the current simulated mood.
 - **Three thought bubbles** — the strongest active influences, with source and decayed strength. Empty bubbles say so instead of inventing an influence.
 - **Charlotte weather and modeled air quality** — current observation, source link, observation time, and whether it is outside the six-hour mood window.
@@ -161,7 +161,7 @@ Before anything reaches IndexedDB, `src/app/worldCache.js` checks the schema ver
 - **Source availability** — one chip per source with hourly-cache/empty/malformed/unavailable state and a direct link.
 - **Explore the world** — expandable, filterable by nine news topics plus weather, alerts, air, river level, earthquakes, wildlife, and NASA events. Distinguishes active reactions from recorded-but-not-governing inputs. Each record shows source, link, original date, update/retrieval dates, and status.
 - **Sources and mood** — expandable ledger of each emotion's strength, supporting records, per-group budgets, news slot allocation, publisher caps, source statuses, and the calculation rules.
-- **Expression preview** — five clearly fictional scenarios, fixed by hand. They never affect the live mood.
+- **Expression preview** — seven clearly fictional scenarios, fixed by hand. They never affect the live mood.
 
 All times are displayed in Charlotte's time zone.
 
@@ -246,15 +246,15 @@ The model receives **only the headline, publisher, and story ID** — never arti
   "reactions": [
     {
       "sourceId": "news:abc123",
-      "mood": "happy",
+      "mood": "hopeful",
       "intensity": 0.5,
-      "text": "Hopeful about people choosing to cooperate."
+      "text": "Encouraged by people choosing to cooperate."
     }
   ]
 }
 ```
 
-Output is rejected if it contains an unknown story ID, a duplicate ID, a mood outside `happy/sad/mad/confused`, an intensity outside 0–1, an empty or overlong text, a URL, a digit, a quotation mark, or words asserting casualties or harm (`killed`, `injured`, `destroyed`, `safe`, `confirmed`, and similar). A rejected item simply does not become a reaction. Cached reactions are revalidated on every build and again in the browser; a reaction without a valid `interpretedAt` is discarded.
+Output is rejected if it contains an unknown story ID, a duplicate ID, a mood outside `happy/hopeful/sad/uneasy/mad/confused`, an intensity outside 0–1, an empty or overlong text, a URL, a digit, a quotation mark, or words asserting casualties or harm (`killed`, `injured`, `destroyed`, `safe`, `confirmed`, and similar). `calm` is reserved for the engine's low-score fallback and is not a model label. A rejected item simply does not become a reaction. Cached reactions are revalidated on every build and again in the browser; a reaction without a valid `interpretedAt` is discarded.
 
 ---
 
@@ -291,7 +291,7 @@ Missing inputs leave their share unused. They never increase another source's we
 contribution = intensity × slotWeight × 2^(-ageHours / halfLifeHours)
 ```
 
-The strongest **aggregate** emotion sets the face. Total the contributions by mood, pick the largest, and show **calm** when that score is below **0.18**.
+The strongest **aggregate** emotion sets the face. Total the contributions by mood, pick the largest, and show **calm** when that score is below **0.18**. The news model may return happy, hopeful, sad, uneasy, mad (displayed as Frustrated), or confused. Calm is not a model label; it is the low-score fallback.
 
 Weather, alerts, air, river level, wildlife, earthquakes, and EONET each contribute at most once. Only the strongest active alert, newest eligible river reading, newest eligible wildlife observation, newest eligible NASA event, and strongest current earthquake (by magnitude) can influence the mood. Other records remain browsable in Explore.
 
@@ -329,13 +329,13 @@ For repeated nature event IDs (iNaturalist observation IDs, EONET event IDs), th
 
 ### What each source contributes
 
-- **Weather** — deterministic WMO-code and temperature rules (clear and mild → happy; rain → sad; storms → confused; heat → mad; cold → sad; overcast → calm).
-- **Weather alerts** — official NWS watches, warnings, and advisories for Charlotte. Severity sets the intensity; heat and fire-weather alerts add frustration, air-quality and smoke alerts add sadness, and other hazards add uncertainty. No damage or danger beyond the listed area is assumed.
+- **Weather** — deterministic WMO-code and temperature rules (clear and mild → happy; rain → sad; storms → uneasy; heat → frustrated; cold → sad; overcast → calm).
+- **Weather alerts** — official NWS watches, warnings, and advisories for Charlotte. Severity sets the intensity; heat and fire-weather alerts add frustration, air-quality and smoke alerts add sadness, and other hazards add watchful unease. No damage or danger beyond the listed area is assumed.
 - **Air quality** — deterministic US AQI bands, labeled as modeled.
-- **River level** — the South Fork Catawba at Lowell, about 25 km west of Charlotte, using NOAA NWPS observed stage and published action/minor/moderate/major flood categories. No local damage is assumed from the gauge alone.
+- **River level** — the South Fork Catawba at Lowell, about 25 km west of Charlotte, using NOAA NWPS observed stage and published action/minor/moderate/major flood categories. Action and minor flooding add unease; moderate and major flooding add sadness. No local damage is assumed from the gauge alone.
 - **Wildlife** — a small positive note for the newest research-grade observation within roughly 50 km.
-- **Earthquakes** — modest concern for magnitudes 4.0+, with distance from Charlotte and the explicit statement that no local impact is assumed.
-- **NASA EONET** — modest concern for open wildfires, severe storms, and volcanoes, without assuming casualties, damage, or danger to Charlotte.
+- **Earthquakes** — watchful unease for magnitudes 4.0+, with distance from Charlotte and the explicit statement that no local impact is assumed.
+- **NASA EONET** — watchful unease for open wildfires, severe storms, and volcanoes, without assuming casualties, damage, or danger to Charlotte.
 - **News** — only the optional build-time model. No keyword sentiment fallback and no invented reaction when the model is off or unavailable.
 
 ---

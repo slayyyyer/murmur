@@ -69,7 +69,7 @@ export const DECAY = Object.freeze({
 
 export const CALM_THRESHOLD = 0.18;
 
-export const MOODS = Object.freeze(['happy', 'sad', 'mad', 'confused', 'calm']);
+export const MOODS = Object.freeze(['happy', 'hopeful', 'sad', 'uneasy', 'mad', 'confused', 'calm']);
 
 export const GROUP_LABELS = Object.freeze({
   news: 'News',
@@ -298,13 +298,23 @@ export const MOOD_COPY = Object.freeze({
     aria: 'eyes bright, cheeks warm, and a wide soft smile',
     accent: 'var(--happy)',
   },
+  hopeful: {
+    label: 'Hopeful',
+    aria: 'brows lifted, eyes bright, and a small open smile',
+    accent: 'var(--hopeful)',
+  },
   sad: {
     label: 'Sad',
     aria: 'brows tilted up, eyes lowered, and a small frown',
     accent: 'var(--sad)',
   },
+  uneasy: {
+    label: 'Uneasy',
+    aria: 'one brow lifted, eyes watchful, and a small uneven mouth',
+    accent: 'var(--uneasy)',
+  },
   mad: {
-    label: 'Mad',
+    label: 'Frustrated',
     aria: 'brows pressed in, a flat mouth, and warm cheeks',
     accent: 'var(--mad)',
   },
@@ -335,6 +345,20 @@ export const PREVIEW_SCENARIOS = Object.freeze([
     title: 'Distant loss',
     description:
       'A fictional coastal town loses its library to a flood. Murmur would feel heavy and quiet, with no claim about the real world.',
+  },
+  {
+    id: 'progress',
+    mood: 'hopeful',
+    title: 'A difficult plan holds',
+    description:
+      'A fictional group of neighbors agrees on a plan to restore a damaged creek. Murmur would feel encouraged and forward-leaning — a made-up example, not a live story.',
+  },
+  {
+    id: 'warning',
+    mood: 'uneasy',
+    title: 'A warning upstream',
+    description:
+      'A fictional flood warning is issued for a river miles away. Murmur would feel watchful and unsettled, with no claim about local damage.',
   },
   {
     id: 'unfair',

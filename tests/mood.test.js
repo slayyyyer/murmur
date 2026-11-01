@@ -3,6 +3,8 @@ import { test } from './harness.js';
 import {
   BUDGETS,
   CALM_THRESHOLD,
+  MOODS,
+  MOOD_COPY,
   NEWS_SLOT_WEIGHT,
   NEWS_TOPIC_IDS,
   NEWS_TOPICS,
@@ -213,6 +215,24 @@ test('calm appears below 0.18 and the strongest emotion otherwise', () => {
   });
   assert.equal(brighter.mood, 'happy');
   assert.ok(brighter.score >= CALM_THRESHOLD);
+});
+
+test('hopeful and uneasy can lead, and mad is displayed as Frustrated', () => {
+  assert.ok(MOODS.includes('hopeful'));
+  assert.ok(MOODS.includes('uneasy'));
+
+  for (const mood of ['hopeful', 'uneasy']) {
+    const state = computeMood({
+      reactions: [measuredReaction({ key: mood, group: 'weather', mood, intensity: 1 })],
+      now: NOW,
+    });
+    assert.equal(state.mood, mood);
+    assert.ok(state.score >= CALM_THRESHOLD);
+  }
+
+  assert.equal(MOOD_COPY.hopeful.label, 'Hopeful');
+  assert.equal(MOOD_COPY.uneasy.label, 'Uneasy');
+  assert.equal(MOOD_COPY.mad.label, 'Frustrated');
 });
 
 test('news slot selection is deterministic and bounded by topic slots', () => {

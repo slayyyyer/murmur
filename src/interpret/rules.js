@@ -17,16 +17,16 @@ export function weatherRule(record) {
 
   if ([95, 96, 99].includes(code)) {
     return {
-      mood: 'confused',
+      mood: 'uneasy',
       intensity: 0.5,
-      text: `Thunderstorms around Charlotte at ${tempText}. The sky feels unpredictable rather than calm.`,
+      text: `Thunderstorms around Charlotte at ${tempText}. The sky feels unstable and worth watching.`,
     };
   }
   if ([56, 57, 66, 67, 77].includes(code)) {
     return {
-      mood: 'confused',
+      mood: 'uneasy',
       intensity: 0.4,
-      text: `Freezing precipitation at ${tempText} makes the day feel sharp-edged and uncertain.`,
+      text: `Freezing precipitation at ${tempText} asks for care; the day has a sharp, watchful edge.`,
     };
   }
   if (feels >= 35) {
@@ -165,7 +165,7 @@ export function earthquakeRule(record) {
     : '';
 
   return {
-    mood: 'confused',
+    mood: 'uneasy',
     intensity,
     text: `USGS recorded a magnitude ${magnitude.toFixed(1)} earthquake${distanceText}. No local impact is assumed.`,
   };
@@ -178,7 +178,7 @@ export function eonetRule(record) {
 
   const title = record.title ? `: “${record.title}”` : '';
   return {
-    mood: 'confused',
+    mood: 'uneasy',
     intensity: data.categoryId === 'volcanoes' ? 0.25 : 0.3,
     text: `NASA EONET lists an open ${label.toLowerCase()} event${title}. The listing does not establish damage or danger to Charlotte.`,
   };
@@ -197,7 +197,7 @@ export function alertRule(record) {
     ? 'mad'
     : /air quality|smoke/i.test(event)
       ? 'sad'
-      : 'confused';
+      : 'uneasy';
   const area = data.areaDesc && data.areaDesc !== 'the alert area' ? ` for ${data.areaDesc}` : ' for the Charlotte area';
 
   return {
@@ -220,13 +220,13 @@ export function waterRule(record) {
   switch (data.category) {
     case 'action':
       return {
-        mood: 'confused',
+        mood: 'uneasy',
         intensity: 0.35,
         text: `${place} is at ${stageText}, at its action stage. The river is running high; no local damage is assumed.`,
       };
     case 'minor':
       return {
-        mood: 'confused',
+        mood: 'uneasy',
         intensity: 0.55,
         text: `${place} is at ${stageText}, in minor flooding at the gauge. This is a river reading, not a claim about damage elsewhere.`,
       };
