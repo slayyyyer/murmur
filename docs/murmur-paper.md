@@ -66,7 +66,7 @@ implementation follows a small set of constraints.
 | Goal | Implementation |
 | --- | --- |
 | Static production deployment | Plain HTML, CSS, and ES modules; the build artifact is served by GitHub Pages |
-| No browser-side source fetching | The browser requests only `data/world-cache.json` from its own origin |
+| No browser-side source fetching | The browser requests only same-origin `data/world-cache.json` and `data/mood/` files |
 | No credentials in the client | The optional model key exists only in the GitHub Actions runner |
 | Independent source failure | One loader, deadline, byte ceiling, and status per source or publisher |
 | No invented fallback data | Empty, malformed, unavailable, and cached states are shown as such |
@@ -117,7 +117,7 @@ flowchart LR
 
   SOURCES["Public sources<br/>Open-Meteo, NWS, NOAA NWPS<br/>BBC, Al Jazeera, NASA, Guardian<br/>Positive News, WFAE, USGS<br/>iNaturalist, NASA EONET"]
   API["OpenAI-compatible model API"]
-  ARTIFACT["GitHub Pages artifact<br/>index.html + src/ + data/world-cache.json"]
+  ARTIFACT["GitHub Pages artifact<br/>index.html + src/ + data/world-cache.json<br/>+ data/mood/"]
   USER["User"]
 
   BUILD -->|"HTTPS direct or via relay"| SOURCES
@@ -233,7 +233,8 @@ flowchart TD
   Q -->|"yes"| S{"Cache <= 4 MiB?"}
   S -->|"no"| R
   S -->|"yes"| T["Write data/world-cache.json"]
-  T --> U["Assemble dist + .nojekyll"]
+  T --> T2["Write data/mood/"]
+  T2 --> U["Assemble dist + .nojekyll"]
   U --> V["Upload artifact and deploy Pages"]
 ```
 
@@ -317,8 +318,8 @@ therefore produces a quieter mood, not a broken page.
 - the top-level `generatedAt` and schema version.
 
 The builder refuses to write a cache larger than four mebibytes. It writes
-`data/world-cache.json`, then the workflow copies only `index.html`,
-`styles.css`, `src/`, and the generated cache into `dist/`, adds `.nojekyll`,
+`data/world-cache.json` and the mood archive, then the workflow copies only `index.html`,
+`styles.css`, `src/`, the generated cache, and `data/mood/` into `dist/`, adds `.nojekyll`,
 uploads the artifact, and deploys it. The cache is generated, not committed.
 
 ---

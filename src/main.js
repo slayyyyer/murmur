@@ -2,6 +2,8 @@ import {
   AUTO_REFRESH_MS,
   LOCATION,
   MOOD_COPY,
+  MOOD_HISTORY_INDEX_URL,
+  MOOD_HISTORY_RECENT_DAYS,
   PREVIEW_SCENARIOS,
   RECORD_PAGE_SIZE,
   TICK_MS,
@@ -9,6 +11,7 @@ import {
   WORLD_CACHE_URL,
 } from './config.js';
 import { loadWorldCache } from './app/worldCache.js';
+import { loadMoodHistory } from './app/moodHistory.js';
 import { runRefresh } from './app/runRefresh.js';
 import { buildSourceStates } from './app/sourceState.js';
 import { loadSettings, saveSettings } from './app/settings.js';
@@ -19,6 +22,7 @@ import { activeReactionKeys, computeMood } from './mood/engine.js';
 import { createReaction } from './interpret/reactions.js';
 import { faceSvg } from './ui/face.js';
 import { bubblesMarkup, moodTimeText, wakingBubblesMarkup } from './ui/moodView.js';
+import { moodHistoryMarkup } from './ui/moodHistory.js';
 import {
   EXPLORE_FILTERS,
   availabilityMarkup,
@@ -34,6 +38,7 @@ import { formatClock, formatDuration, formatRelative, HOUR_MS } from './lib/time
 import { moodLabel } from './ui/format.js';
 
 const $ = (id) => document.getElementById(id);
+let moodHistoryRequest = null;
 
 const state = {
   now: Date.now(),
@@ -48,6 +53,7 @@ const state = {
   activeKeys: new Set(),
   settings: loadSettings(),
   newsModel: null,
+  moodHistory: { points: [], months: [], missing: [], error: null, loading: true },
   busy: false,
   lastRefreshAt: null,
   cacheGeneratedAt: null,
@@ -286,6 +292,18 @@ function renderNextRefresh() {
   element.textContent = `Next cache check in ${formatDuration(remaining / 60_000)}`;
 }
 
+function renderMoodHistory() {
+  const body = $('mood-history-body');
+  if (!body) return;
+  body.innerHTML = moodHistoryMarkup({
+    points: state.moodHistory.points,
+    missing: state.moodHistory.missing,
+    days: MOOD_HISTORY_RECENT_DAYS,
+    error: state.moodHistory.error,
+    loading: state.moodHistory.loading,
+  });
+}
+
 function renderAll() {
   renderMood();
   renderConditions();
@@ -293,6 +311,7 @@ function renderAll() {
   renderExplorePressed();
   renderExploreList();
   renderBreakdown();
+  renderMoodHistory();
   renderPreview();
   renderModelPill();
   renderRefreshStatus();
@@ -329,6 +348,31 @@ function summarizeRefresh(sourceStates, result, snapshot) {
     parts.push('stale; GitHub Actions may be delayed or disabled');
   }
   return `${formatClock(Date.now())} · ${parts.join(' · ')}.`;
+}
+
+async function refreshMoodHistory({ now = Date.now() } = {}) {
+  if (moodHistoryRequest) return moodHistoryRequest;
+  state.moodHistory = { ...state.moodHistory, loading: true };
+  renderMoodHistory();
+  moodHistoryRequest = (async () => {
+    try {
+      const history = await loadMoodHistory({
+        fetchImpl: window.fetch.bind(window),
+        indexUrl: MOOD_HISTORY_INDEX_URL,
+        now,
+        days: MOOD_HISTORY_RECENT_DAYS,
+      });
+      state.moodHistory = { ...history, error: null, loading: false };
+    } catch (error) {
+      state.moodHistory = { ...state.moodHistory, error: error.message, loading: false };
+    }
+    renderMoodHistory();
+  })();
+  try {
+    return await moodHistoryRequest;
+  } finally {
+    moodHistoryRequest = null;
+  }
 }
 
 async function saveCachedNewsReactions(snapshot, records) {
@@ -424,6 +468,7 @@ async function refresh({ auto = false } = {}) {
     state.mood = computeMood({ reactions: state.reactions, now: state.now });
     state.activeKeys = activeReactionKeys(state.mood);
     state.refreshNote = summarizeRefresh(sourceStates, result, snapshot);
+    void refreshMoodHistory({ now: state.now });
   } catch (error) {
     state.refreshNote = `World cache unavailable: ${error.message}. Saved records and reactions are still shown.`;
     toast('The hourly cache could not be loaded. Saved records are still available.');
@@ -578,6 +623,7 @@ async function boot() {
   wireEvents();
   await loadFromStore();
   renderAll();
+  void refreshMoodHistory({ now: state.now });
 
   state.nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
 

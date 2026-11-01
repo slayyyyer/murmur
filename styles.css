@@ -681,6 +681,93 @@ code {
   text-align: right;
 }
 
+/* Mood history */
+
+.mood-history-summary {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.mood-history-summary strong {
+  color: var(--ink);
+}
+
+.mood-chart {
+  margin-top: 14px;
+}
+
+.mood-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.mood-chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.mood-chart-axis-label {
+  fill: var(--muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+}
+
+.mood-chart-threshold {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  opacity: 0.6;
+}
+
+.mood-chart-threshold-label {
+  fill: var(--accent-deep);
+  font-family: var(--font-body);
+  font-size: 10px;
+}
+
+.mood-chart-line {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mood-chart-dot {
+  stroke: var(--surface-solid);
+  stroke-width: 1.5;
+}
+
+.mood-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 10px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.mood-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mood-legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.mood-history-note {
+  margin-top: 10px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
 /* Preview */
 
 .preview {

@@ -21,5 +21,6 @@ flowchart TD
   Q -->|"yes"| S{"Cache <= 4 MiB?"}
   S -->|"no"| R
   S -->|"yes"| T["Write data/world-cache.json"]
-  T --> U["Assemble dist + .nojekyll"]
+  T --> T2["Write data/mood/"]
+  T2 --> U["Assemble dist + .nojekyll"]
   U --> V["Upload artifact and deploy Pages"]

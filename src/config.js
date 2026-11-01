@@ -289,6 +289,10 @@ export const RECORD_PAGE_SIZE = 40;
 /** The static snapshot built by the hourly GitHub Actions workflow. */
 export const WORLD_CACHE_URL = new URL('../data/world-cache.json', import.meta.url).href;
 export const WORLD_CACHE_SCHEMA_VERSION = 2;
+
+/** The hourly mood archive. Monthly shards stay small; the browser loads the recent ones. */
+export const MOOD_HISTORY_INDEX_URL = new URL('../data/mood/index.json', import.meta.url).href;
+export const MOOD_HISTORY_RECENT_DAYS = 30;
 export const WORLD_CACHE_MAX_AGE_HOURS = 2;
 export const WORLD_CACHE_BUCKET_MS = AUTO_REFRESH_MS;
 

@@ -27,6 +27,19 @@ This removes CORS and mixed-content problems from the browser and keeps the rela
 
 The app checks for a new cache every ten minutes, matching GitHub Pages' ten-minute asset cache. Each request uses a versioned URL (`?v=<ten-minute bucket>`), and the interface always shows the cache's actual generation time.
 
+### Mood history
+
+The same hourly builder also writes a compact mood archive:
+
+```text
+data/mood/index.json       # available months
+data/mood/2026-11.json     # one point per build
+```
+
+A point stores the displayed mood, top emotion, score, calm flag, group contributions, mood scores, and active news topic counts. It is computed with the same `computeMood()` function the browser uses, from the same records and reactions.
+
+The browser loads only the months that can overlap the last thirty days and draws a small SVG chart. The history is a record of Murmur's simulated mood at cache-build time, not a survey of Charlotte or a measure of public opinion. The workflow reads the previous archive from the live Pages deployment before appending; a missing month is reported in the interface rather than silently invented.
+
 ---
 
 ## Run it locally
@@ -84,7 +97,7 @@ npm test
 bun tests/run.js
 ```
 
-The suite has 79 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, malformed-feed diagnostics, model-output validation, cache validation, and multi-build retention.
+The suite has 84 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, malformed-feed diagnostics, model-output validation, cache validation, and multi-build retention.
 
 ---
 
@@ -102,7 +115,7 @@ The workflow runs:
 - on every push to `main`,
 - on manual dispatch.
 
-It runs the tests, starts the relay on the runner, builds the cache, creates a `dist/` directory with only the app and `data/world-cache.json`, and deploys that artifact. `data/` and `dist/` are gitignored.
+It runs the tests, starts the relay on the runner, builds the cache, creates a `dist/` directory with only the app, `data/world-cache.json`, and `data/mood/`, and deploys that artifact. `data/` and `dist/` are gitignored.
 
 If every source fails, the cache builder exits non-zero and the previous successful Pages deployment stays online. Partial failures still deploy, with each source's status shown in the interface. A cache older than two hours is labeled stale; GitHub cron can be delayed, and scheduled workflows can be disabled after prolonged repository inactivity.
 
@@ -159,6 +172,7 @@ Before anything reaches IndexedDB, `src/app/worldCache.js` checks the schema ver
 ## What is on screen
 
 - **Face and mood** — happy, hopeful, sad, uneasy, frustrated, confused, or calm, drawn as an inline animated SVG. The stored key `mad` is displayed as **Frustrated**.
+- **Mood over time** — a 30-day SVG chart of hourly cache moods, with the calm cutoff, mood colors, and a compact summary. It is a simulated-mood record, not public opinion.
 - **Mood sentence** — a short description of the current simulated mood.
 - **Three thought bubbles** — the strongest active influences, with source and decayed strength. Empty bubbles say so instead of inventing an influence.
 - **Charlotte weather and modeled air quality** — current observation, source link, observation time, and whether it is outside the six-hour mood window.
@@ -371,7 +385,7 @@ If the cache request fails, the page keeps every previously saved record and rea
 - No accounts, analytics, trackers, or third-party scripts.
 - No API keys in frontend code. The build-time model key lives only in GitHub Actions secrets.
 - The browser downloads one same-origin JSON cache and stores observations and reactions in IndexedDB.
-- The hourly cache contains only public records. Wildlife entries store the taxon, a coarse distance rounded to 5 km (or 10/100 km farther away), the observation link, and dates. They **do not** store observer identities, photos, place guesses, or precise coordinates.
+- The hourly cache and mood history contain only public records and aggregate mood scores. Wildlife entries store the taxon, a coarse distance rounded to 5 km (or 10/100 km farther away), the observation link, and dates. They **do not** store observer identities, photos, place guesses, or precise coordinates.
 - The browser never sends headlines anywhere. GitHub Actions sends only the headline, publisher, and story ID to the configured model while building the cache.
 - The relay sets `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`.
 
@@ -425,6 +439,7 @@ src/
   app/
     runRefresh.js          Isolated ingest/reaction pipeline
     worldCache.js          Static cache fetching and validation
+    moodHistory.js         Compact points, monthly validation, history loading
     sourceState.js         Browser source-state derivation
     settings.js            localStorage settings with validation
   store/
@@ -435,6 +450,7 @@ src/
     face.js                Accessible animated SVG
     format.js              Shared labels, dates, status text
     moodView.js            Bubbles and mood line rendering
+    moodHistory.js         Accessible SVG chart for the recent mood series
     panels.js              Conditions, availability, explore, breakdown
 scripts/
   build-world-cache.js     Hourly snapshot builder
@@ -446,6 +462,7 @@ proxy/
 tests/                     Decay, expiry, persistence, adapters, cache, model output
 docs/                      Technical paper and editable diagram sources
 data/world-cache.json      Generated locally or in CI; gitignored
+data/mood/                 Hourly mood archive; gitignored
 ```
 
 ---
