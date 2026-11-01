@@ -201,7 +201,7 @@ test('the strongest active alert and newest river reading are the only singles',
   assert.equal(water[0].reaction.key, 'reaction:water-new');
 });
 
-test('calm appears below 0.18 and the strongest emotion otherwise', () => {
+test('calm appears below the threshold and the strongest emotion otherwise', () => {
   const quiet = computeMood({
     reactions: [measuredReaction({ key: 'quiet-weather', group: 'weather', intensity: 0.6 })],
     now: NOW,
@@ -215,6 +215,20 @@ test('calm appears below 0.18 and the strongest emotion otherwise', () => {
   });
   assert.equal(brighter.mood, 'happy');
   assert.ok(brighter.score >= CALM_THRESHOLD);
+});
+
+test('a clear measured day can clear the calm threshold', () => {
+  const mood = computeMood({
+    reactions: [
+      measuredReaction({ key: 'clear-sky', group: 'weather', mood: 'happy', intensity: 0.6 }),
+      measuredReaction({ key: 'excellent-air', group: 'air', mood: 'happy', intensity: 0.35 }),
+      measuredReaction({ key: 'nearby-wildlife', group: 'wildlife', mood: 'happy', intensity: 0.5 }),
+    ],
+    now: NOW,
+  });
+  assert.equal(mood.mood, 'happy');
+  assert.ok(Math.abs(mood.score - 0.1575) < 1e-12);
+  assert.ok(mood.score > CALM_THRESHOLD);
 });
 
 test('hopeful and uneasy can lead, and mad is displayed as Frustrated', () => {

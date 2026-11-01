@@ -67,7 +67,7 @@ export const DECAY = Object.freeze({
   eonet: { halfLifeHours: 24, maxAgeHours: 168 },
 });
 
-export const CALM_THRESHOLD = 0.18;
+export const CALM_THRESHOLD = 0.14;
 
 export const MOODS = Object.freeze(['happy', 'hopeful', 'sad', 'uneasy', 'mad', 'confused', 'calm']);
 

@@ -84,7 +84,7 @@ npm test
 bun tests/run.js
 ```
 
-The suite has 78 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, malformed-feed diagnostics, model-output validation, cache validation, and multi-build retention.
+The suite has 79 tests and uses only Node's built-in assertions and the project's ES modules. It covers mood math, decay and expiry, persistence, source adapters, malformed-feed diagnostics, model-output validation, cache validation, and multi-build retention.
 
 ---
 
@@ -297,7 +297,7 @@ Missing inputs leave their share unused. They never increase another source's we
 contribution = intensity × slotWeight × 2^(-ageHours / halfLifeHours)
 ```
 
-The strongest **aggregate** emotion sets the face. Total the contributions by mood, pick the largest, and show **calm** when that score is below **0.18**. The news model may return happy, hopeful, sad, uneasy, mad (displayed as Frustrated), or confused. Calm is not a model label; it is the low-score fallback.
+The strongest **aggregate** emotion sets the face. Total the contributions by mood, pick the largest, and show **calm** when that score is below **0.14**. A single pleasant source still cannot clear the cutoff, but a clear day with excellent air and a nearby wildlife observation can. The news model may return happy, hopeful, sad, uneasy, mad (displayed as Frustrated), or confused. Calm is not a model label; it is the low-score fallback.
 
 Weather, alerts, air, river level, wildlife, earthquakes, and EONET each contribute at most once. Only the strongest active alert, newest eligible river reading, newest eligible wildlife observation, newest eligible NASA event, and strongest current earthquake (by magnitude) can influence the mood. Other records remain browsable in Explore.
 

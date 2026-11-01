@@ -1,4 +1,4 @@
-import { GROUP_LABELS_SHORT } from '../config.js';
+import { CALM_THRESHOLD, GROUP_LABELS_SHORT } from '../config.js';
 import { formatClock, formatRelative, formatStrength } from '../lib/time.js';
 import { escapeHtml } from '../lib/validate.js';
 
@@ -18,7 +18,7 @@ function sourceText(reaction) {
 }
 
 function attentionText(value) {
-  return value >= 0.18 ? 'pulling strongly' : value >= 0.08 ? 'a gentle pull' : 'a faint pull';
+  return value >= CALM_THRESHOLD ? 'pulling strongly' : value >= 0.08 ? 'a gentle pull' : 'a faint pull';
 }
 
 /** Three bubbles: strongest active influences first, then honest quiet slots. */

@@ -674,14 +674,15 @@ the news slot weight; the exponential term is the decay factor. Examples:
 Contributions are summed **by mood**, not by source. If both examples were
 happy, the happy score would be about `0.1022`. The highest-scoring mood wins,
 with ties broken by the fixed mood order. If the highest score is below
-`0.18`, the displayed mood is **Calm** even if the leading measured note used a
+`0.14`, the displayed mood is **Calm** even if the leading measured note used a
 different label.
 
-The threshold is deliberately high relative to a single source. Clear weather
-alone can contribute at most `0.12` (`0.20 × 0.6`), below the threshold. This is
-intentional: the face is not meant to become emphatically happy because one
-source is pleasant. It takes a combination of supported influences, or several
-news slots, to move the face decisively.
+The threshold remains above any single measured source. Clear weather alone can
+contribute at most `0.12` (`0.20 × 0.6`), below the cutoff. This is intentional:
+the face is not meant to become emphatically happy because one source is
+pleasant. A clear day with excellent air and a nearby wildlife observation
+reaches `0.1575`, so a genuinely good combination can move the face to
+**Happy**.
 
 ```mermaid
 flowchart TD
@@ -697,7 +698,7 @@ flowchart TD
   W --> D["contribution = intensity x weight x 2^(-age / half-life)"]
   W2 --> D
   D --> A["Sum contributions by mood"]
-  A --> T{"Top score < 0.18?"}
+  A --> T{"Top score < 0.14?"}
   T -->|"yes"| C["Calm fallback"]
   T -->|"no"| M["Winning mood<br/>happy / hopeful / sad / uneasy /<br/>mad (shown as Frustrated) / confused"]
   C --> F["Face, bubbles and calculation ledger"]
@@ -866,7 +867,7 @@ or authoritative.
 | News slots per topic | 2 | `src/config.js` |
 | News slot weight | 0.55 / 18 | `src/config.js` |
 | Publisher story cap | 6 | `src/config.js` |
-| Calm threshold | 0.18 | `src/config.js` |
+| Calm threshold | 0.14 | `src/config.js` |
 | Source fetch deadline | 12 s | `src/config.js`, relay |
 | JSON/feed byte ceilings | 3 MiB / 2 MiB | `src/config.js` |
 | Cache schema | 2 | `src/config.js` |

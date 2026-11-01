@@ -11,7 +11,7 @@ flowchart TD
   W --> D["contribution = intensity x weight x 2^(-age / half-life)"]
   W2 --> D
   D --> A["Sum contributions by mood"]
-  A --> T{"Top score < 0.18?"}
+  A --> T{"Top score < 0.14?"}
   T -->|"yes"| C["Calm fallback"]
   T -->|"no"| M["Winning mood<br/>happy / hopeful / sad / uneasy /<br/>mad (shown as Frustrated) / confused"]
   C --> F["Face, bubbles and calculation ledger"]
