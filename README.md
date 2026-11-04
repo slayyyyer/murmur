@@ -117,7 +117,9 @@ The workflow runs:
 
 It runs the tests, starts the relay on the runner, builds the cache, creates a `dist/` directory with only the app, `data/world-cache.json`, and `data/mood/`, and deploys that artifact. `data/` and `dist/` are gitignored.
 
-If every source fails, the cache builder exits non-zero and the previous successful Pages deployment stays online. Partial failures still deploy, with each source's status shown in the interface. A cache older than two hours is labeled stale; GitHub cron can be delayed, and scheduled workflows can be disabled after prolonged repository inactivity.
+A separate `keepalive` job keeps the hourly schedule from being switched off. GitHub disables scheduled triggers in public repositories after 60 days without a commit, so the job reads the last commit's date and, once it is 45 days old, pushes a single empty commit using the default `GITHUB_TOKEN` (`contents: write`). It runs every hour but only commits on that one run, and it runs `always()`, so a failed cache build does not cost the schedule. The empty commit is an ordinary push to `main`, so it triggers one extra build; if branch protection forbids direct pushes to `main`, a manual run is the fallback.
+
+If every source fails, the cache builder exits non-zero and the previous successful Pages deployment stays online. Partial failures still deploy, with each source's status shown in the interface. A cache older than two hours is labeled stale; GitHub cron can be delayed, but the keepalive job keeps the schedule enabled.
 
 The news model is optional. To enable it, add `ZAI_API_KEY` (or `NEWS_MODEL_API_KEY`) under **Settings → Secrets and variables → Actions**. Without a key, measured sources still deploy and the interface says news mood was not generated. Optional repository variables `NEWS_MODEL_BASE_URL`, `NEWS_MODEL_NAME`, and `NEWS_MODEL_PROVIDER` override the Z.ai defaults; do not put keys in variables. All measured sources are public and keyless. The production site has no server process.
 
@@ -459,7 +461,7 @@ proxy/
   server.js                Static server + allowlisted relay
   allowlist.js             The complete upstream allowlist
 .github/workflows/
-  pages.yml                Hourly cache, tests, artifact, Pages deployment
+  pages.yml                Hourly cache, tests, artifact, Pages deployment, keepalive
 tests/                     Decay, expiry, persistence, adapters, cache, model output
 docs/                      Technical paper and editable diagram sources
 data/world-cache.json      Generated locally or in CI; gitignored
@@ -491,7 +493,7 @@ If you add a feed, add it to `FEEDS` and add its origin/path prefix to the allow
 - EONET is filtered to fires, severe storms, and volcanoes; other categories are ignored.
 - iNaturalist requests research-grade, licensed, non-captive observations. Some eligible observations may still be omitted when the API lacks a usable date or link.
 - No demo data is included or substituted. Empty and failed states are shown as such.
-- GitHub cron is best-effort and can be delayed. Scheduled workflows may be disabled after 60 days of repository inactivity; run the workflow manually to re-enable the schedule.
+- GitHub cron is best-effort and can be delayed. Scheduled workflows are disabled after 60 days without a commit; the `keepalive` job prevents that with one empty commit every 45 days, but if the schedule is ever disabled, run the workflow manually to re-enable it.
 - GitHub Pages serves assets with a ten-minute cache. The app accounts for this, but a newly deployed cache can take up to ten minutes to appear.
 - Weather, alerts, and air expire on their own shorter windows, and the gauge reading expires after a day, so a badly delayed cache naturally removes them from the mood.
 - Feed summaries are publisher-provided and may lag or change. Murmur never fetches article pages.

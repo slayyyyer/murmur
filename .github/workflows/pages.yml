@@ -84,3 +84,29 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  # GitHub disables scheduled triggers in public repositories after 60 days
+  # without a commit. Once the last commit is 45 days old, push one empty commit
+  # so the hourly schedule keeps running through quiet months.
+  keepalive:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Keep the hourly schedule enabled
+        run: |
+          last_commit=$(git log -1 --format=%ct)
+          age_days=$(( ($(date +%s) - last_commit) / 86400 ))
+          echo "Last commit is ${age_days} day(s) old."
+          if [ "${age_days}" -lt 45 ]; then
+            echo "Recent enough; no keepalive commit needed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Keep the hourly cache schedule active"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

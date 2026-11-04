@@ -826,9 +826,10 @@ substitutes.
 - iNaturalist requests research-grade, licensed, non-captive observations. Some
   eligible observations may be omitted when the API lacks a usable date or link.
 - No demo data is included or substituted.
-- GitHub cron is best-effort and can be delayed. Scheduled workflows may be
-  disabled after prolonged repository inactivity; a manual run re-enables the
-  schedule.
+- GitHub cron is best-effort and can be delayed. Scheduled workflows are
+  disabled after 60 days without a commit; the workflow's own `keepalive` job
+  pushes one empty commit when the last commit is older than 45 days, and a
+  manual run re-enables a schedule that is already disabled.
 - GitHub Pages caches assets for up to ten minutes. The app accounts for this,
   but a newly deployed cache can take up to ten minutes to appear.
 - Weather, alerts, and air expire on shorter windows, and the gauge reading
